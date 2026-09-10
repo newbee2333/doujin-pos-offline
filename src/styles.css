@@ -454,6 +454,21 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .menu-card-cover.sold-out .thumb { opacity: 0.6; filter: grayscale(0.9); }
 .menu-card-cover.sold-out .price { color: var(--ink-2); }
 
+/* 购物车里的商品小图。
+   封面是竖版，所以小图也保持竖构图；object-position 与卡片一致（重心上移）。
+   没有这张图，顾客核对"我到底加了哪个"只能靠品名。 */
+.cart-thumb {
+  width: 56px;
+  height: 72px;
+  flex: none;
+  object-fit: cover;
+  object-position: center top;
+  border-radius: var(--radius-ctl);
+  background: var(--surface-2);
+  border: var(--line-hair) solid var(--line);
+}
+.cart-thumb-sm { width: 44px; height: 56px; }
+
 .cart-bar {
   position: fixed;
   left: 0;

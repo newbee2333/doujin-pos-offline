@@ -12,6 +12,8 @@ export interface CartItem {
   priceMinor: number;
   quantity: number;
   maxAvailable: number | null;
+  /** 封面图。购物车里没有小图的话，顾客核对"我到底加了哪个"只能靠品名。 */
+  coverAssetId: string | null;
 }
 
 export type BootStage = 'idle' | 'checking' | 'ready' | 'blocked' | 'another-window' | 'error';

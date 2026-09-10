@@ -113,7 +113,8 @@ export default function KioskMenuPage() {
         variantName: item.variant_name,
         priceMinor: item.price_minor,
         quantity,
-        maxAvailable: item.available_stock
+        maxAvailable: item.available_stock,
+        coverAssetId: item.cover_asset_id
       });
     setCart(next);
     setDetail(null);
