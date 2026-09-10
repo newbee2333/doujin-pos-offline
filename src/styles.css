@@ -16,6 +16,9 @@
   --radius: 14px;
   --shadow: 0 1px 2px rgba(38, 34, 31, 0.06), 0 4px 16px rgba(38, 34, 31, 0.06);
   --tap: 46px;
+  /* 购物车条高度。菜单网格的底部留白由它算出，不再用魔数，
+     改条高时两处一起变，不会像以前那样漏掉一处。 */
+  --cart-bar-h: 72px;
 }
 
 * { box-sizing: border-box; }
@@ -233,7 +236,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 }
 .chip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 
-.menu-grid { display: grid; gap: 14px; padding: 14px 18px 120px; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); }
+.menu-grid { display: grid; gap: 14px; padding: 14px 18px calc(var(--cart-bar-h) + 16px); grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); }
 .menu-card {
   background: var(--surface);
   border: 1px solid var(--line);
@@ -274,7 +277,18 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .menu-card .body { padding: 10px 12px 8px; display: flex; flex-direction: column; gap: 4px; flex: 1; }
 .menu-card .name { font-weight: 600; font-size: 0.95rem; line-height: 1.3; }
 .menu-card .sold-out { position: relative; }
-.menu-card.sold-out .thumb, .menu-card.sold-out .thumb-placeholder { opacity: 0.45; }
+/* 售罄：原来只把封面降到 45% 透明度，亮场地下隔着 60cm 基本看不出。
+   现在封面去色压低（仍能认出是哪件），徽章改成实心红底白字，一眼可辨。 */
+.menu-card.sold-out .thumb,
+.menu-card.sold-out .thumb-placeholder { opacity: 0.55; filter: grayscale(0.85); }
+.menu-card.sold-out .name,
+.menu-card.sold-out .price { color: var(--ink-2); }
+.menu-card.sold-out .badge.danger {
+  background: var(--danger);
+  color: #fff;
+  border-color: transparent;
+  font-weight: 500;
+}
 .menu-card-action {
   padding: 8px 10px 10px;
   border-top: 1px solid var(--line);
@@ -284,7 +298,9 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 }
 .add-btn {
   width: 100%;
-  min-height: 38px;
+  /* 原来写死 38px，低于 44px 无障碍下限；改用项目已有的 --tap（46px）。
+     这是排队场景下点得最频繁的按钮，误触代价直接是收错单。 */
+  min-height: var(--tap);
   font-weight: 600;
   background: var(--accent);
   color: #fff;
@@ -299,6 +315,9 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   left: 0;
   right: 0;
   bottom: 0;
+  /* 显式高度，与 --cart-bar-h 绑定；菜单网格的底部留白由同一个变量算出 */
+  min-height: var(--cart-bar-h);
+  box-sizing: border-box;
   background: var(--surface);
   border-top: 1px solid var(--line);
   padding: 12px 18px;
@@ -319,7 +338,8 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 }
 
 .qty { display: inline-flex; align-items: center; gap: 2px; }
-.qty button { min-height: 38px; min-width: 38px; padding: 0; font-size: 1.1rem; }
+/* 数量增减原来 38×38，是全站误触代价最高的控件（直接改金额），提到 --tap */
+.qty button { min-height: var(--tap); min-width: var(--tap); padding: 0; font-size: 1.1rem; }
 .qty .value { min-width: 40px; text-align: center; font-variant-numeric: tabular-nums; font-weight: 600; }
 
 /* --------------------------------------------------- 支付码 */
