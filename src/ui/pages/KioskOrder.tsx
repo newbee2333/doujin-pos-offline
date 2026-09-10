@@ -34,6 +34,23 @@ export default function KioskOrderPage() {
   );
   const allMethods = useAsync(() => listPaymentMethods(), []);
 
+  // 下面两个提前 return 之前，必须先算出所有 hook 依赖的值并调用完所有 hook。
+  const order = detail.data?.order;
+  const planned = order?.planned_payment_method_id ?? null;
+  const cashMethod = allMethods.data?.find((x) => x.id === (methodId || planned)) ?? null;
+
+  // 现金实收默认填应付金额：选了现金且还没填，就预填；用户清空后会再次预填。
+  // ⚠️ 这个 effect 必须待在两个提前 return 之上。原来它在 return 之后：
+  //    首次渲染（loading）时没执行它、hook 数少一个；数据到达后第二次渲染多执行一个，
+  //    React 直接抛 "Rendered more hooks than during the previous render"，
+  //    整棵组件树卸载 → 游客提交订单后卡死在白屏。开发时不会报错，
+  //    只有真实走完「提交订单 → 跳到本页」才会暴露。
+  useEffect(() => {
+    if (order && cashMethod && order.total_minor > 0 && !tendered) {
+      setTendered(minorToInput(order.total_minor, order.currency));
+    }
+  }, [methodId, order, cashMethod, tendered]);
+
   if (detail.loading) {
     return (
       <div className="center-page">
@@ -41,11 +58,9 @@ export default function KioskOrderPage() {
       </div>
     );
   }
-  const order = detail.data?.order;
   if (!order) return <ErrorBox message="订单不存在或已不可访问" />;
 
   const currency = order.currency;
-  const planned = detail.data!.order.planned_payment_method_id;
 
   async function doConfirm() {
     setBusy(true);
@@ -88,15 +103,6 @@ export default function KioskOrderPage() {
     lockStaff();
     navigate('/kiosk');
   }
-
-  const cashMethod = allMethods.data?.find((x) => x.id === (methodId || planned));
-
-  // 现金实收默认填应付金额：选了现金且还没填，就预填；用户清空后会再次预填
-  useEffect(() => {
-    if (order && cashMethod && order.total_minor > 0 && !tendered) {
-      setTendered(minorToInput(order.total_minor, order.currency));
-    }
-  }, [methodId, order, cashMethod, tendered]);
 
   return (
     <div className="kiosk">
