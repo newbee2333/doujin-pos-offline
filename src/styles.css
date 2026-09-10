@@ -137,6 +137,37 @@ input[type='text'], input[type='number'], input[type='search'], input[type='pass
   background: var(--surface);
   width: 100%;
 }
+.date-input-control { position: relative; width: 100%; }
+.date-input-control .date-input-text { padding-right: 44px; }
+.date-input-native {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  right: 8px;
+  bottom: 4px;
+  opacity: 0;
+  pointer-events: none;
+}
+button.date-input-picker {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  width: 44px;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink-2);
+}
+button.date-input-picker svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
 textarea { min-height: 88px; resize: vertical; }
 label.field { display: flex; flex-direction: column; gap: 4px; font-size: 0.85rem; color: var(--ink-2); }
 label.check { display: flex; align-items: center; gap: 8px; font-size: 0.9rem; min-height: 34px; }

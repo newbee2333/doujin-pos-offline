@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   activateEvent,
@@ -31,6 +31,57 @@ import AssetEditor from '../AssetEditor';
 import { ErrorBox, Field, Spinner, useAsync } from '../components';
 import AddProductsModal from './AddProductsModal';
 import type { Currency } from '../../domain/types';
+
+function formatDateInput(value: string) {
+  const digits = value.replace(/\D/g, '').slice(0, 8);
+  if (digits.length <= 4) return digits;
+  if (digits.length <= 6) return `${digits.slice(0, 4)}/${digits.slice(4)}`;
+  return `${digits.slice(0, 4)}/${digits.slice(4, 6)}/${digits.slice(6)}`;
+}
+
+function DateInput({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  const pickerRef = useRef<HTMLInputElement>(null);
+  const pickerValue = /^\d{4}\/\d{2}\/\d{2}$/.test(value) ? value.replaceAll('/', '-') : '';
+
+  return (
+    <div className="date-input-control">
+      <input
+        className="date-input-text"
+        type="text"
+        inputMode="numeric"
+        autoComplete="off"
+        maxLength={10}
+        placeholder="yyyy/mm/dd"
+        value={value}
+        onChange={(e) => onChange(formatDateInput(e.target.value))}
+      />
+      <input
+        ref={pickerRef}
+        className="date-input-native"
+        type="date"
+        tabIndex={-1}
+        value={pickerValue}
+        onChange={(e) => onChange(e.target.value.replaceAll('-', '/'))}
+      />
+      <button
+        className="date-input-picker"
+        type="button"
+        aria-label="打开日期选择器"
+        title="打开日期选择器"
+        onClick={() => {
+          const picker = pickerRef.current;
+          if (!picker) return;
+          if (typeof picker.showPicker === 'function') picker.showPicker();
+          else picker.click();
+        }}
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M7 2v3M17 2v3M3.5 9h17M5 4h14a2 2 0 0 1 2 2v14H3V6a2 2 0 0 1 2-2Z" />
+        </svg>
+      </button>
+    </div>
+  );
+}
 
 export default function StaffEventsPage() {
   const showToast = useApp((s) => s.showToast);
@@ -125,10 +176,10 @@ function CreateEventModal({
               </select>
             </Field>
             <Field label="开始日期（当地日期）">
-              <input type="date" value={start} onChange={(e) => setStart(e.target.value)} />
+              <DateInput value={start} onChange={setStart} />
             </Field>
             <Field label="结束日期">
-              <input type="date" value={end} onChange={(e) => setEnd(e.target.value)} />
+              <DateInput value={end} onChange={setEnd} />
             </Field>
           </div>
           <ErrorBox message={error} />
@@ -148,8 +199,8 @@ function CreateEventModal({
                   name,
                   booth_number: booth || null,
                   currency,
-                  start_date: start || null,
-                  end_date: end || null
+                  start_date: start ? start.replaceAll('/', '-') : null,
+                  end_date: end ? end.replaceAll('/', '-') : null
                 });
                 onCreated(id);
               } catch (e) {
