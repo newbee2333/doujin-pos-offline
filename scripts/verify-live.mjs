@@ -18,7 +18,9 @@ const base = 'https://d0a4166b6973444faaf7e2ef6e9724cd.app.workbuddy.link';
     ['封面窗口 6:5', /aspect-ratio:\s*6\s*\/\s*5/.test(style)],
     ['裁切重心上移 center top', /object-position:\s*center top/.test(style)],
     ['售罄覆盖层 sold-veil', code.includes('sold-veil') || style.includes('sold-veil')],
-    ['减少动效 prefers-reduced-motion', style.includes('prefers-reduced-motion')]
+    ['减少动效 prefers-reduced-motion', style.includes('prefers-reduced-motion')],
+    ['支付方式 PIN 开关 confirm_requires_pin', code.includes('confirm_requires_pin')],
+    ['开关文案 确认需输 PIN', code.includes('确认需输 PIN')]
   ];
   for (const [label, pass] of rows) {
     console.log('  ' + label.padEnd(30), pass ? '✅' : '❌');
