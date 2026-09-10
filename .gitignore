@@ -1,0 +1,38 @@
+# 依赖
+node_modules/
+
+# 构建产物
+dist/
+dist-ssr/
+
+# Vite 临时文件
+vite.config.ts.timestamp-*.mjs
+*.timestamp-*.mjs
+
+# 本地证书（用于局域网 HTTPS 测试，绝不入库）
+certs/
+*.pem
+*.key
+*.p12
+*.pfx
+
+# 测试与截图产物
+scripts/*.png
+coverage/
+test-results/
+playwright-report/
+
+# 编辑器与系统
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+*.log
+npm-debug.log*
+yarn-error.log*
+
+# 本地环境变量
+.env
+.env.local
+.env.*.local

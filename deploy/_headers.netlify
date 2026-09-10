@@ -1,0 +1,19 @@
+/*
+  Netlify / Cloudflare Pages：把本文件放到发布目录（dist/）根目录，改名 `_headers`。
+  opfs-sahpool 依赖 SharedArrayBuffer，必须跨源隔离；这两个头漏掉应用会直接拒绝启动。
+*/
+
+/*
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Embedder-Policy: require-corp
+  Cross-Origin-Resource-Policy: same-origin
+
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/index.html
+  Cache-Control: no-cache
+
+/sw.js
+  Cache-Control: no-cache
+*/
