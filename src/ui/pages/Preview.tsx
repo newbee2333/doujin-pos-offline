@@ -2,9 +2,9 @@ import { useMemo, useState } from 'react';
 import { getKioskMenu } from '../../services/orders';
 import { listCategories } from '../../services/catalog';
 import { formatMoney } from '../../domain/money';
-import { stockLabel } from '../../domain/types';
 import { useApp } from '../../store';
-import { AssetImage, ErrorBox, Spinner, useAsync } from '../components';
+import { ErrorBox, Spinner, useAsync } from '../components';
+import MenuCard from '../MenuCard';
 
 const FRAMES = [
   { key: 'ipad-landscape', label: '平板横屏 1180×820', width: 1180, height: 820 },
@@ -84,34 +84,15 @@ export default function PreviewPage() {
           ))}
         </div>
         <div className="menu-grid">
-          {filtered.map((item) => {
-            const label = stockLabel(item);
-            return (
-              <div key={item.variant_id} className={`menu-card ${label === '售罄' ? 'sold-out' : ''}`}>
-                <AssetImage assetId={item.cover_asset_id} alt={item.product_name} />
-                <div className="body">
-                  <span className="name">{item.product_name}</span>
-                  <span className="price">{formatMoney(item.price_minor, item.currency)}</span>
-                  <span className="row tight">
-                    <span className={`badge ${label === '售罄' ? 'danger' : label === '少量' ? 'warn' : 'ok'}`}>
-                      {label}
-                    </span>
-                    {item.show_exact_stock && item.available_stock !== null ? (
-                      <span className="tiny muted">剩 {item.available_stock}</span>
-                    ) : null}
-                  </span>
-                  <button
-                    className="small"
-                    style={{ marginTop: 6 }}
-                    disabled={label === '售罄'}
-                    onClick={() => setCartCount((c) => c + 1)}
-                  >
-                    加入购物车（预览）
-                  </button>
-                </div>
-              </div>
-            );
-          })}
+            {filtered.map((item) => (
+              <MenuCard
+                key={item.variant_id}
+                item={item}
+                onAdd={() => setCartCount((c) => c + 1)}
+                onSetQty={(v) => setCartCount(v)}
+                onOpenDetail={() => {}}
+              />
+            ))}
         </div>
         <div className="cart-bar" style={{ position: 'sticky', bottom: 0 }}>
           <span className="count">{cartCount}</span>
