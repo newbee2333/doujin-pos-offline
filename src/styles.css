@@ -210,7 +210,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 18px; flex-wrap: wrap; }
 
 /* --------------------------------------------------- 菜单（游客） */
-.kiosk { min-height: 100%; display: flex; flex-direction: column; background: var(--bg); }
+.kiosk { min-height: 100%; display: flex; flex-direction: column; background: var(--bg); container-type: inline-size; }
 .kiosk-header {
   display: flex;
   align-items: center;
@@ -236,7 +236,30 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 }
 .chip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 
-.menu-grid { display: grid; gap: 14px; padding: 14px 18px calc(var(--cart-bar-h) + 16px); grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); }
+/* 列数按「容器」宽度决定，不再用 auto-fill 让浏览器自己算。
+   原因：卡片真正关心的是它所在容器的宽度，不是视口宽度——
+   预览功能会把菜单渲染进 390 / 820 / 1180 三种尺寸的画框里，
+   而视口媒体查询会拿浏览器窗口宽度去判断，画框里显示的就不是真机布局。
+   现在写死列数，"一屏看到几个"也从"碰巧"变成可预测。 */
+.menu-grid {
+  display: grid;
+  gap: 14px;
+  padding: 14px 18px calc(var(--cart-bar-h) + 16px);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+@container (min-width: 620px) {
+  .menu-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@container (min-width: 980px) {
+  .menu-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+@container (min-width: 1400px) {
+  .menu-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+}
+/* 窄屏收紧留白（保留原来小屏更紧凑的意图，但不再写死 120px） */
+@container (max-width: 560px) {
+  .menu-grid { gap: 10px; padding: 12px 12px calc(var(--cart-bar-h) + 16px); }
+}
 .menu-card {
   background: var(--surface);
   border: 1px solid var(--line);
@@ -384,7 +407,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .stat .label { font-size: 0.8rem; color: var(--ink-2); }
 .stat .value { font-size: 1.35rem; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 2px; }
 
-.preview-frame { border: 1px solid var(--line); border-radius: 16px; overflow: hidden; background: var(--bg); }
+.preview-frame { border: 1px solid var(--line); border-radius: 16px; overflow: hidden; background: var(--bg); container-type: inline-size; }
 .preview-badge {
   position: sticky;
   top: 0;
@@ -402,5 +425,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   .sidebar a { white-space: nowrap; }
   .app { flex-direction: column; }
   .content { padding: 12px; }
-  .menu-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); padding: 12px 12px 120px; }
+  /* 原来这里还有一条 .menu-grid 覆盖，写死了 padding 120px。
+     列数和留白现在由容器查询处理，见上方 @container 规则——
+     顺带把第 1 步漏掉的那处魔数一起清掉了。 */
 }
