@@ -14,7 +14,13 @@ function fail(name, detail) {
   steps.push(`FAIL ${name} — ${detail}`);
 }
 
-const browser = await chromium.launch({ channel: 'msedge', args: ['--no-sandbox'] });
+// 本地默认用系统 Edge（本项目的 Playwright 跳过了浏览器下载）；
+// CI 上传 SMOKE_CHANNEL=chromium 走 Playwright 自带浏览器。
+const CHANNEL = process.env.SMOKE_CHANNEL ?? 'msedge';
+const browser = await chromium.launch({
+  ...(CHANNEL ? { channel: CHANNEL } : {}),
+  args: ['--no-sandbox']
+});
 const ctx = await browser.newContext();
 ctx.on('dialog', (d) => d.accept());
 const page = await ctx.newPage();

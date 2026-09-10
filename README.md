@@ -149,7 +149,44 @@ npm run serve:static -- --cert ./certs/cert.pem --key ./certs/key.pem
 
 ---
 
-## 六、目录结构
+## 六、开发流程
+
+`main` 只保留已验证的代码。**每次改动都走独立分支 + Pull Request**，合并前由 CI 自动验证。
+
+```bash
+# 一个改动 = 一个分支 = 一个 PR
+node scripts/git-pr.mjs \
+  --branch fix-ios-file-input \
+  --title "fix: 修复 iOS 上 SQLite 文件无法选择" \
+  --body "根因：file input 的 accept 在 iOS 上按系统 UTI 过滤，.sqlite3 无对应 UTI 会被置灰。
+改法：去掉 accept，合法性改由文件内容判定。"
+```
+
+脚本会依次做：从最新 `main` 拉分支 → 提交 → 推送 → `gh pr create`，并打印 PR 链接。
+
+前置条件：安装 [GitHub CLI](https://cli.github.com/) 并执行过一次 `gh auth login`。
+
+> **分支名不要用斜杠。** 本机实测：`git checkout -b feat/xxx` 会「报告成功」但
+> `.git/refs/heads/` 下的子目录留不住，引用根本没写出来，HEAD 变成 unborn，
+> 紧接着的 commit 会变成没有父提交的根提交，跟 `main` 断了血缘。
+> 脚本会自动把 `/` 转成 `-`。产生过这种悬空提交时用 `git fsck --lost-found` 可以找回来。
+
+### CI 会检查什么
+
+`.github/workflows/ci.yml` 在每次 push / PR 时跑两个 job：
+
+| Job | 内容 |
+| --- | --- |
+| `verify` | 类型检查、38 项真实 SQLite 集成测试、生产构建、构建产物完整性 |
+| `e2e` | 装 Chromium → 构建 → 用带 COOP/COEP 的服务器托管 → 校验响应头 → 跑三个冒烟脚本 |
+
+`e2e` 里专门校验 `Cross-Origin-Opener-Policy` 与 `Cross-Origin-Embedder-Policy`：
+少了这两个头 `opfs-sahpool` 拿不到 `SharedArrayBuffer`，应用会直接拒绝启动。
+这类问题本地开发环境（Vite 已配好响应头）测不出来，必须在 CI 里守住。
+
+本地跑冒烟默认用系统 Edge（免下载浏览器）；CI 上会传 `SMOKE_CHANNEL=chromium` 走 Playwright 自带浏览器。
+
+## 七、目录结构
 
 ```
 src/
