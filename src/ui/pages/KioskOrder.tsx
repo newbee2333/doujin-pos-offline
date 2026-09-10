@@ -39,6 +39,13 @@ export default function KioskOrderPage() {
   const planned = order?.planned_payment_method_id ?? null;
   const cashMethod = allMethods.data?.find((x) => x.id === (methodId || planned)) ?? null;
 
+  // 这一单的确认要不要 PIN：按游客下单时选的支付方式决定（支付方式上有个开关）。
+  // 以 planned 为准而不是摊主中途改的方式——否则已放行的处理界面会中途被锁回去。
+  // 找不到对应方式时保守要求 PIN。
+  const plannedMethod = planned ? allMethods.data?.find((x) => x.id === planned) : undefined;
+  const needsPin = plannedMethod ? plannedMethod.confirm_requires_pin === 1 : true;
+  const canManage = staffUnlocked || !needsPin;
+
   // 现金实收默认填应付金额：选了现金且还没填，就预填；用户清空后会再次预填。
   // ⚠️ 这个 effect 必须待在两个提前 return 之上。原来它在 return 之后：
   //    首次渲染（loading）时没执行它、hook 数少一个；数据到达后第二次渲染多执行一个，
@@ -160,7 +167,7 @@ export default function KioskOrderPage() {
         <ErrorBox message={detail.error ?? error} />
 
         {order.status === 'pending_payment' ? (
-          !staffUnlocked ? (
+          !canManage ? (
             <div className="card">
               {pinMode ? (
                 <PinPad

@@ -191,6 +191,7 @@ function EventDetail({
   // 支付方式开关使用乐观状态：避免写入完成前复选框回弹
   const [methodOn, setMethodOn] = useState<Record<string, boolean>>({});
   const [templateOn, setTemplateOn] = useState<Record<string, boolean>>({});
+  const [pinFor, setPinFor] = useState<Record<string, boolean>>({});
   const [showAdd, setShowAdd] = useState(false);
 
   if (event.loading || configs.loading) {
@@ -648,6 +649,24 @@ function EventDetail({
                     }}
                   />
                   模板启用
+                </label>
+                <label className="check" title="关闭后，游客下单时摊主直接点确认即可，无需输入 PIN">
+                  <input
+                    type="checkbox"
+                    checked={pinFor[m.id] ?? m.confirm_requires_pin === 1}
+                    onChange={async (e) => {
+                      const value = e.target.checked;
+                      setPinFor((s) => ({ ...s, [m.id]: value }));
+                      try {
+                        await updatePaymentMethod(m.id, { confirm_requires_pin: value });
+                        methods.reload();
+                      } catch (err) {
+                        setPinFor((s) => ({ ...s, [m.id]: !value }));
+                        showToast(errorMessage(err));
+                      }
+                    }}
+                  />
+                  确认需输 PIN
                 </label>
                 {m.type === 'qr_payment' ? (
                   <div style={{ flex: 1, minWidth: 220 }}>
