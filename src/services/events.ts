@@ -355,6 +355,7 @@ export async function createPaymentMethod(input: {
   type: PaymentMethod['type'];
   qr_asset_id?: string | null;
   instruction?: string | null;
+  confirm_requires_pin?: boolean;
 }): Promise<string> {
   const name = input.name.trim();
   if (!name) throw new DomainError('支付方式名称不能为空');
@@ -362,9 +363,17 @@ export async function createPaymentMethod(input: {
   await ex().tx([
     {
       t: 'run',
-      sql: `INSERT INTO payment_methods (id, name, type, qr_asset_id, enabled, sort_order, instruction, created_at)
-            VALUES (?, ?, ?, ?, 1, (SELECT COALESCE(MAX(sort_order),0)+1 FROM payment_methods), ?, ?)`,
-      params: [id, name, input.type, input.qr_asset_id ?? null, input.instruction ?? null, nowIso()]
+      sql: `INSERT INTO payment_methods (id, name, type, qr_asset_id, enabled, sort_order, instruction, confirm_requires_pin, created_at)
+            VALUES (?, ?, ?, ?, 1, (SELECT COALESCE(MAX(sort_order),0)+1 FROM payment_methods), ?, ?, ?)`,
+      params: [
+        id,
+        name,
+        input.type,
+        input.qr_asset_id ?? null,
+        input.instruction ?? null,
+        input.confirm_requires_pin === false ? 0 : 1,
+        nowIso()
+      ]
     }
   ]);
   return id;
@@ -372,7 +381,7 @@ export async function createPaymentMethod(input: {
 
 export async function updatePaymentMethod(
   id: string,
-  patch: { name?: string; type?: PaymentMethod['type']; qr_asset_id?: string | null; enabled?: boolean; sort_order?: number; instruction?: string | null }
+  patch: { name?: string; type?: PaymentMethod['type']; qr_asset_id?: string | null; enabled?: boolean; sort_order?: number; instruction?: string | null; confirm_requires_pin?: boolean }
 ): Promise<void> {
   const fields: [string, unknown][] = [];
   const map: Record<string, string> = {
@@ -381,7 +390,8 @@ export async function updatePaymentMethod(
     qr_asset_id: 'qr_asset_id',
     enabled: 'enabled',
     sort_order: 'sort_order',
-    instruction: 'instruction'
+    instruction: 'instruction',
+    confirm_requires_pin: 'confirm_requires_pin'
   };
   for (const [key, col] of Object.entries(map)) {
     const v = (patch as Record<string, unknown>)[key];

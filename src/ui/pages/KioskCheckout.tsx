@@ -5,7 +5,7 @@ import { newId } from '../../domain/ids';
 import { createPendingOrder } from '../../services/orders';
 import { getEvent, getEventPaymentMethods } from '../../services/events';
 import { useApp, errorMessage } from '../../store';
-import { ErrorBox, Spinner, useAssetUrl, useAsync } from '../components';
+import { AssetImage, ErrorBox, Spinner, useAssetUrl, useAsync } from '../components';
 import type { Currency } from '../../domain/types';
 
 export default function KioskCheckoutPage() {
@@ -76,6 +76,11 @@ export default function KioskCheckoutPage() {
           <h2>订单内容</h2>
           {cart.map((c) => (
             <div key={c.variantId} className="row" style={{ padding: '6px 0' }}>
+              <AssetImage
+                assetId={c.coverAssetId}
+                alt={c.productName}
+                className="cart-thumb cart-thumb-sm"
+              />
               <div style={{ flex: 1 }}>
                 <div>{c.productName}</div>
                 <div className="small muted">

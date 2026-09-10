@@ -1,7 +1,7 @@
 /** 数据库 DDL 与有序迁移。schema_version 独立于应用版本（第 5 节）。 */
 
 export const APPLICATION_ID = 0x444f554a; // 'DOUJ'
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 export const APP_VERSION = '0.1.0';
 
 /** 首次建库执行的建表语句，按顺序执行。 */
@@ -138,6 +138,9 @@ export const INITIAL_SCHEMA: string[] = [
     enabled     INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0,1)),
     sort_order  INTEGER NOT NULL DEFAULT 0,
     instruction TEXT,
+    /* 确认这一方式的收款时是否需要输入摊主 PIN。
+       默认 1（要 PIN）——安全默认；摊主可为免签收的场合逐个关掉。 */
+    confirm_requires_pin INTEGER NOT NULL DEFAULT 1 CHECK (confirm_requires_pin IN (0,1)),
     created_at  TEXT NOT NULL
   )`,
 
@@ -328,7 +331,16 @@ export function checkSchemaSupport(version: number): { ok: boolean; reason?: str
 }
 
 /** 有序迁移。V1 首次 schema 为 1，不人为制造无意义生产 schema。 */
-export const MIGRATIONS: Migration[] = [];
+export const MIGRATIONS: Migration[] = [
+  {
+    // v2：支付方式支持「确认时是否需要 PIN」。老库补列，默认要 PIN（与既有行为一致）。
+    fromVersion: 1,
+    toVersion: 2,
+    sql: [
+      'ALTER TABLE payment_methods ADD COLUMN confirm_requires_pin INTEGER NOT NULL DEFAULT 1 CHECK (confirm_requires_pin IN (0,1))'
+    ]
+  }
+];
 
 export const DEFAULT_CATEGORIES = [
   '新刊',

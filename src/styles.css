@@ -19,6 +19,21 @@
   /* 购物车条高度。菜单网格的底部留白由它算出，不再用魔数，
      改条高时两处一起变，不会像以前那样漏掉一处。 */
   --cart-bar-h: 72px;
+
+  /* ---------------------------------------------------- 排版级数（1.25 模数）
+     原来字号是散装的（1.15rem / 0.95rem / 1.1rem），没有规律。
+     现在收敛成四个语义级，字重只有 400 与 500 两档。
+     现场可视距离约 50–70cm，所以最小的次要信息也保持在 12px。 */
+  --fs-title: 1.0625rem; /* 17px 目录名 */
+  --fs-price: 1.375rem;  /* 22px 价格（卡片里最该被看见的数字） */
+  --fs-name: 0.9375rem;  /* 15px 品名 */
+  --fs-meta: 0.75rem;    /* 12px 次要信息、库存 */
+
+  /* 圆角：卡片从 16 收到 10，更"工具"、少装饰 */
+  --radius-card: 10px;
+  --radius-ctl: 8px;
+  /* 阴影只留给浮起元素（购物车条、弹层）；卡片改用描边，不用阴影 */
+  --line-hair: 0.5px;
 }
 
 * { box-sizing: border-box; }
@@ -223,18 +238,21 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   z-index: 10;
   flex-wrap: wrap;
 }
-.kiosk-header .title { font-size: 1.15rem; font-weight: 700; }
+.kiosk-header .title { font-size: var(--fs-title); font-weight: 500; }
 .chip-row { display: flex; gap: 8px; overflow-x: auto; padding: 12px 18px 4px; }
 .chip {
   padding: 10px 16px;
   border-radius: 999px;
   border: 1px solid var(--line);
   background: var(--surface);
-  min-height: 42px;
+  min-height: var(--tap);
   white-space: nowrap;
   cursor: pointer;
+  font-size: var(--fs-name);
+  transition: background-color 120ms ease, border-color 120ms ease;
 }
 .chip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* 列数按「容器」宽度决定，不再用 auto-fill 让浏览器自己算。
    原因：卡片真正关心的是它所在容器的宽度，不是视口宽度——
@@ -330,8 +348,126 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   border: none;
   border-radius: 10px;
   font-size: 0.95rem;
+  transition: background-color 120ms ease, transform 120ms ease;
 }
 .add-btn:hover { background: #9c4717; }
+/* 按下时给一点物理反馈。排队场景下动效要极短，120ms 是"确认收到"而非"表演" */
+.add-btn:active { transform: scale(0.97); }
+.add-btn:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.add-btn:disabled {
+  background: var(--surface-2);
+  color: var(--ink-2);
+  border: 1px solid var(--line);
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* ==================== 游客菜单的卡片：封面主导（范围限定 .kiosk） ====================
+   .menu-card 同时被游客菜单和摊主收银复用，所以重排只作用于游客面，
+   下面所有规则都带 .kiosk 前缀（特指性也刚好高于共享规则，无需 !important）。
+
+   为什么要重排：原来「封面在上 + 品名/价格/徽章各占一行」的结构下，
+   卡片高度由宽度决定，iPad 横屏一屏只能完整放下一行（3–5 个）。
+   现在把品名压成封面上的覆盖条、价格与按钮并成一行，
+   把省下的竖向空间还给封面 —— 4 列 × 2 行 = 8 个才放得下。 */
+.menu-card-cover {
+  border-radius: var(--radius-card);
+  border-width: var(--line-hair);
+}
+.menu-card-cover .menu-card-info { position: relative; display: block; }
+/* 封面窗口 6:5。object-position: center top —— 竖版封面按「填满」缩放后
+   优先露出顶部，保住封面顶部的书名区，只裁底部（用户选定的裁切策略）。 */
+.menu-card-cover .thumb,
+.menu-card-cover .thumb-placeholder {
+  width: 100%;
+  aspect-ratio: 6 / 5;
+  object-fit: cover;
+  object-position: center top;
+  display: block;
+}
+.menu-card-cover .caption {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 22px 10px 8px;
+  /* 功能性渐变遮罩，只为保证白字压在任意封面上都可读，不是装饰性渐变 */
+  background: linear-gradient(to top, rgba(20, 17, 15, 0.84), rgba(20, 17, 15, 0));
+  display: block;
+}
+.menu-card-cover .caption .name {
+  font-size: var(--fs-name);
+  font-weight: 500;
+  color: #fff;
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-wrap: pretty;
+}
+.menu-card-cover .caption .variant { font-size: var(--fs-meta); color: rgba(255, 255, 255, 0.78); }
+.menu-card-cover .stock-tag {
+  position: absolute;
+  /* 放右上角：同人志封面大多把书名放在左上或居中，左上角标签会压住书名 */
+  top: 8px;
+  right: 8px;
+  font-size: var(--fs-meta);
+  font-weight: 500;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--ok);
+  color: #fff;
+}
+.menu-card-cover .stock-tag.warn { background: var(--warn); }
+.menu-card-cover .stock-tag.danger { background: var(--danger); }
+/* flat 用于「还剩多少」这类不需要警报的信息，安静一点不抢封面 */
+.menu-card-cover .stock-tag.flat { background: rgba(38, 34, 31, 0.5); }
+.menu-card-cover .sold-veil {
+  position: absolute;
+  inset: 0;
+  background: rgba(38, 34, 31, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.menu-card-cover .sold-mark {
+  background: var(--danger);
+  color: #fff;
+  font-size: var(--fs-name);
+  font-weight: 500;
+  padding: 7px 18px;
+  border-radius: 999px;
+}
+.menu-card-cover .menu-card-action {
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border-top-width: var(--line-hair);
+}
+.menu-card-cover .menu-card-action .price {
+  font-size: var(--fs-price);
+  font-weight: 500;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+.menu-card-cover .add-btn { width: auto; padding: 0 16px; font-weight: 500; font-size: var(--fs-name); }
+.menu-card-cover.sold-out .thumb { opacity: 0.6; filter: grayscale(0.9); }
+.menu-card-cover.sold-out .price { color: var(--ink-2); }
+
+/* 购物车里的商品小图。
+   封面是竖版，所以小图也保持竖构图；object-position 与卡片一致（重心上移）。
+   没有这张图，顾客核对"我到底加了哪个"只能靠品名。 */
+.cart-thumb {
+  width: 56px;
+  height: 72px;
+  flex: none;
+  object-fit: cover;
+  object-position: center top;
+  border-radius: var(--radius-ctl);
+  background: var(--surface-2);
+  border: var(--line-hair) solid var(--line);
+}
+.cart-thumb-sm { width: 44px; height: 56px; }
 
 .cart-bar {
   position: fixed;
@@ -424,8 +560,22 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   .sidebar .brand, .sidebar .side-note { display: none; }
   .sidebar a { white-space: nowrap; }
   .app { flex-direction: column; }
-  .content { padding: 12px; }
-  /* 原来这里还有一条 .menu-grid 覆盖，写死了 padding 120px。
-     列数和留白现在由容器查询处理，见上方 @container 规则——
-     顺带把第 1 步漏掉的那处魔数一起清掉了。 */
+    .content { padding: 12px; }
+    /* 原来这里还有一条 .menu-grid 覆盖，写死了 padding 120px。
+       列数和留白现在由容器查询处理，见上方 @container 规则——
+       顺带把第 1 步漏掉的那处魔数一起清掉了。 */
+  }
+
+/* --------------------------------------------------- 尊重系统「减少动效」
+   晕动症用户会在系统里关掉动效；本应用里的动效都很短（120ms），
+   关掉之后功能不受任何影响，只是少了确认反馈。 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

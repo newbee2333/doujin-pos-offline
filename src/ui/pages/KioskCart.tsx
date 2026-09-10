@@ -2,7 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import { formatMoney } from '../../domain/money';
 import { getEvent } from '../../services/events';
 import { useApp } from '../../store';
-import { ErrorBox, QtyStepper, useAsync } from '../components';
+import { AssetImage, ErrorBox, QtyStepper, useAsync } from '../components';
 import type { Currency } from '../../domain/types';
 
 export default function KioskCartPage() {
@@ -42,7 +42,12 @@ export default function KioskCartPage() {
             {cart.map((c) => (
               <div key={c.variantId} className="card">
                 <div className="row">
-                  <div style={{ flex: 1, minWidth: 180 }}>
+                  <AssetImage
+                    assetId={c.coverAssetId}
+                    alt={c.productName}
+                    className="cart-thumb"
+                  />
+                  <div style={{ flex: 1, minWidth: 150 }}>
                     <div className="strong">{c.productName}</div>
                     <div className="small muted">{c.variantName}</div>
                     <div className="small muted">
