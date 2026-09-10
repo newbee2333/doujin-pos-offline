@@ -62,12 +62,24 @@ export function useAssetUrl(assetId: string | null | undefined): string | null {
   return url;
 }
 
-export function AssetImage({ assetId, alt }: { assetId: string | null | undefined; alt: string }) {
+export function AssetImage({
+  assetId,
+  alt,
+  className
+}: {
+  assetId: string | null | undefined;
+  alt: string;
+  /** 追加的样式类；不传时保持原有 thumb/thumb-placeholder 行为 */
+  className?: string;
+}) {
   const url = useAssetUrl(assetId);
+  const cls = className ? `thumb ${className}` : 'thumb';
   if (!url) {
-    return <div className="thumb-placeholder">无图片</div>;
+    return (
+      <div className={className ? `thumb-placeholder ${className}` : 'thumb-placeholder'}>无图片</div>
+    );
   }
-  return <img className="thumb" src={url} alt={alt} />;
+  return <img className={cls} src={url} alt={alt} />;
 }
 
 /* --------------------------------------------------------------- 金额 */

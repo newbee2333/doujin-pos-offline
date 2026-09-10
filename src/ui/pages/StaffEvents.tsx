@@ -28,6 +28,7 @@ import { setCurrentEventId } from '../../services/system';
 import { formatMoney, minorToInput, parseAmountToMinor } from '../../domain/money';
 import { errorMessage, useApp } from '../../store';
 import AssetEditor from '../AssetEditor';
+import { validateEventDates } from '../../domain/event-dates';
 import { ErrorBox, Field, Spinner, useAsync } from '../components';
 import AddProductsModal from './AddProductsModal';
 import type { Currency } from '../../domain/types';
@@ -91,6 +92,12 @@ export default function StaffEventsPage() {
   );
 }
 
+/* 展会日期的合理范围。
+   浏览器的日期框年份段允许键入 6 位数（HTML 原生行为，规格上限 275760 年），
+   不是表单代码的 bug；用 min/max 圈住可选范围，提交时再校验兜底。 */
+const EVENT_DATE_MIN = '2020-01-01';
+const EVENT_DATE_MAX = '2035-12-31';
+
 function CreateEventModal({
   onClose,
   onCreated
@@ -125,10 +132,10 @@ function CreateEventModal({
               </select>
             </Field>
             <Field label="开始日期（当地日期）">
-              <input type="date" value={start} onChange={(e) => setStart(e.target.value)} />
+              <input type="date" min={EVENT_DATE_MIN} max={EVENT_DATE_MAX} value={start} onChange={(e) => setStart(e.target.value)} />
             </Field>
             <Field label="结束日期">
-              <input type="date" value={end} onChange={(e) => setEnd(e.target.value)} />
+              <input type="date" min={EVENT_DATE_MIN} max={EVENT_DATE_MAX} value={end} onChange={(e) => setEnd(e.target.value)} />
             </Field>
           </div>
           <ErrorBox message={error} />
@@ -141,6 +148,12 @@ function CreateEventModal({
             className="primary"
             disabled={busy || !name.trim()}
             onClick={async () => {
+              // 日期校验（原生年份段允许键入 6 位数，提交时兜底）
+              const dateError = validateEventDates(start || null, end || null);
+              if (dateError) {
+                setError(dateError);
+                return;
+              }
               setBusy(true);
               setError(null);
               try {
@@ -191,6 +204,7 @@ function EventDetail({
   // 支付方式开关使用乐观状态：避免写入完成前复选框回弹
   const [methodOn, setMethodOn] = useState<Record<string, boolean>>({});
   const [templateOn, setTemplateOn] = useState<Record<string, boolean>>({});
+  const [pinFor, setPinFor] = useState<Record<string, boolean>>({});
   const [showAdd, setShowAdd] = useState(false);
 
   if (event.loading || configs.loading) {
@@ -648,6 +662,24 @@ function EventDetail({
                     }}
                   />
                   模板启用
+                </label>
+                <label className="check" title="关闭后，游客下单时摊主直接点确认即可，无需输入 PIN">
+                  <input
+                    type="checkbox"
+                    checked={pinFor[m.id] ?? m.confirm_requires_pin === 1}
+                    onChange={async (e) => {
+                      const value = e.target.checked;
+                      setPinFor((s) => ({ ...s, [m.id]: value }));
+                      try {
+                        await updatePaymentMethod(m.id, { confirm_requires_pin: value });
+                        methods.reload();
+                      } catch (err) {
+                        setPinFor((s) => ({ ...s, [m.id]: !value }));
+                        showToast(errorMessage(err));
+                      }
+                    }}
+                  />
+                  确认需输 PIN
                 </label>
                 {m.type === 'qr_payment' ? (
                   <div style={{ flex: 1, minWidth: 220 }}>

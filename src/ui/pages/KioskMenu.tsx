@@ -6,6 +6,7 @@ import { formatMoney } from '../../domain/money';
 import { stockLabel, type MenuItem } from '../../domain/types';
 import { useApp } from '../../store';
 import { AssetImage, ErrorBox, Modal, Money, QtyStepper, Spinner, useAsync } from '../components';
+import MenuCard from '../MenuCard';
 
 const IDLE_MS = 5 * 60 * 1000;
 const WARN_MS = 30 * 1000;
@@ -112,7 +113,8 @@ export default function KioskMenuPage() {
         variantName: item.variant_name,
         priceMinor: item.price_minor,
         quantity,
-        maxAvailable: item.available_stock
+        maxAvailable: item.available_stock,
+        coverAssetId: item.cover_asset_id
       });
     setCart(next);
     setDetail(null);
@@ -181,62 +183,32 @@ export default function KioskMenuPage() {
           const inCart = cart.find((c) => c.variantId === item.variant_id);
           const cartQty = inCart?.quantity ?? 0;
           const max = item.product_type === 'non_stock' ? null : item.available_stock;
+          // 只在"会影响购买决策"的状态下显示标签。
+          // 「有货」是默认状态，标在每张卡上只是噪音，而且左上角会压住封面顶部的书名区。
+          // 摊主若开了「显示精确库存」，就把它放出来（这是摊主明确要的信息，优先于粗粒度标签）。
+          const stock = item.available_stock ?? 0;
+          const exact = item.show_exact_stock && item.product_type !== 'non_stock' && item.available_stock !== null;
+          const tag = soldOut
+            ? { text: '售罄', kind: 'danger' }
+            : exact
+              ? { text: `剩 ${stock}`, kind: stock <= item.low_stock_threshold ? 'warn' : 'flat' }
+              : label === '少量'
+                ? { text: '少量', kind: 'warn' }
+                : null;
           return (
-            <div key={item.variant_id} className={`menu-card ${soldOut ? 'sold-out' : ''}`}>
-              <button
-                type="button"
-                className="menu-card-info"
-                onClick={() => {
-                  if (soldOut) return;
-                  setQty(Math.max(1, cartQty || 1));
-                  setDetail(item);
-                  touch();
-                }}
-                aria-label={`查看 ${item.product_name} 详情`}
-              >
-                <AssetImage assetId={item.cover_asset_id} alt={item.product_name} />
-                <div className="body">
-                  <span className="name">{item.product_name}</span>
-                  {item.variant_name !== '默认规格' ? (
-                    <span className="tiny muted">{item.variant_name}</span>
-                  ) : null}
-                  <span className="price">{formatMoney(item.price_minor, item.currency)}</span>
-                  <span className="row tight">
-                    <span
-                      className={`badge ${
-                        label === '售罄' ? 'danger' : label === '少量' ? 'warn' : label === '不限' ? '' : 'ok'
-                      }`}
-                    >
-                      {label}
-                    </span>
-                    {item.show_exact_stock && item.available_stock !== null ? (
-                      <span className="tiny muted">剩 {item.available_stock}</span>
-                    ) : null}
-                  </span>
-                </div>
-              </button>
-              {soldOut ? null : (
-                <div className="menu-card-action">
-                  {inCart ? (
-                    <QtyStepper
-                      value={cartQty}
-                      min={0}
-                      max={max}
-                      onChange={(v) => updateCartQty(item, v)}
-                    />
-                  ) : (
-                    <button
-                      type="button"
-                      className="add-btn"
-                      onClick={() => addToCart(item, 1)}
-                      aria-label={`加入购物车：${item.product_name}`}
-                    >
-                      + 加入购物车
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
+            <MenuCard
+              key={item.variant_id}
+              item={item}
+              inCartQty={cartQty}
+              onAdd={() => addToCart(item, 1)}
+              onSetQty={(v) => updateCartQty(item, v)}
+              onOpenDetail={() => {
+                if (soldOut) return;
+                setQty(Math.max(1, cartQty || 1));
+                setDetail(item);
+                touch();
+              }}
+            />
           );
         })}
         {!filtered.length ? <p className="muted">没有找到商品。</p> : null}

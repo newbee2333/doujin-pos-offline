@@ -157,6 +157,60 @@ try {
   }
 
   // 收摊 → 首页应出现明显的「立即导出」提示
+  // ── 顾客路径：游客菜单 → 购物车 → 结算 → 提交订单 → 订单页正常渲染
+  //    回归防线：KioskOrderPage 的 useEffect 曾放在提前 return 之后，
+  //    游客提交订单后整树崩溃白屏；而当时 smoke-flow 只测摊主收款，漏掉了这条链路。
+  await page.goto(BASE + 'kiosk', { waitUntil: 'networkidle' });
+  await page.waitForTimeout(1500);
+  const addBtn = page.locator('.add-btn').first();
+  if (await addBtn.count()) {
+    await addBtn.click();
+    await page.waitForTimeout(400);
+    // 不能用 page.goto 跳购物车——整页重载会清空内存里的购物车
+    await page.locator('.cart-bar button').first().click();
+    await page.waitForTimeout(900);
+    await page.getByRole('button', { name: '去结算' }).click();
+    await page.waitForTimeout(900);
+    const methodBtn = page.locator('.grid.cols-2 button').first();
+    if (await methodBtn.count()) {
+      await methodBtn.click();
+      await page.waitForTimeout(400);
+    }
+    await page.getByRole('button', { name: '提交订单' }).click();
+    await page.waitForTimeout(2200);
+    const orderText = await page.evaluate(() => (document.body.innerText || '').trim());
+    if (page.url().includes('/kiosk/order/') && orderText.length > 0) {
+      ok('游客提交订单 → 订单页正常渲染', '订单 ' + page.url().split('/').pop());
+    } else {
+      fail('游客提交订单', 'URL=' + page.url() + ' 文本=' + orderText.slice(0, 120));
+    }
+  } else {
+    fail('游客下单', '菜单上没有可用的加入按钮');
+  }
+
+  // 顾客下单后有一笔待收款订单；业务规则要求先确认到账（或取消）才允许收摊
+  await gotoStaff('staff/pending');
+  await page.waitForTimeout(900);
+  if (await page.getByRole('button', { name: '确认已收款' }).count()) {
+    const methodSel = page.locator('select').first();
+    if (await methodSel.count()) {
+      await methodSel.selectOption({ index: 1 });
+      await page.waitForTimeout(400);
+    }
+    const fillBtn = page.getByRole('button', { name: '按应付金额' });
+    if (await fillBtn.count()) {
+      await fillBtn.first().click();
+      await page.waitForTimeout(300);
+    }
+    await page.getByRole('button', { name: '确认已收款' }).first().click();
+    await page.waitForTimeout(1600);
+  }
+  if (!(await page.getByRole('button', { name: '确认已收款' }).count())) {
+    ok('待收款订单已确认到账');
+  } else {
+    fail('待收款订单确认', '确认后列表里仍有待收款订单');
+  }
+
   await gotoStaff('staff/events');
   const closeBtn = page.getByRole('button', { name: '收摊', exact: true });
   if (await closeBtn.count()) {

@@ -140,6 +140,8 @@ export interface PaymentMethod {
   enabled: number;
   sort_order: number;
   instruction: string | null;
+  /** 确认这一方式的收款时是否需要输入摊主 PIN（0/1） */
+  confirm_requires_pin: number;
   created_at: string;
 }
 

@@ -23,6 +23,7 @@ import { ErrorBox, PinPad, Spinner } from './ui/components';
 import BackupNudge from './ui/BackupNudge';
 import SetupPage from './ui/pages/Setup';
 import HomePage from './ui/pages/Home';
+import HelpPage from './ui/pages/Help';
 import KioskMenuPage from './ui/pages/KioskMenu';
 import KioskCartPage from './ui/pages/KioskCart';
 import KioskCheckoutPage from './ui/pages/KioskCheckout';
@@ -304,6 +305,12 @@ function Sidebar() {
       <NavLink to="/settings" className={({ isActive }) => (isActive ? 'active' : '')}>
         设置
       </NavLink>
+      <NavLink to="/help" className={({ isActive }) => (isActive ? 'active' : '')}>
+        说明书
+        <span className="tiny muted" style={{ display: 'block', fontWeight: 400 }}>
+          摆摊前中后怎么做
+        </span>
+      </NavLink>
       {limited ? <div className="side-note">受限营业模式：请频繁导出备份</div> : null}
       {staffUnlocked ? (
         <button className="small ghost" onClick={lockStaff}>
@@ -415,6 +422,7 @@ function Shell() {
                 </StaffGuard>
               }
             />
+            <Route path="/help" element={<HelpPage />} />
             <Route
               path="/settings"
               element={
