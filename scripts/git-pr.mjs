@@ -40,17 +40,41 @@ if (branch !== branchRaw) {
 function git(...a) {
   return execFileSync('git', a, { encoding: 'utf8' }).trim();
 }
-function gh(...a) {
-  return execFileSync('gh', a, { encoding: 'utf8' }).trim();
+
+/**
+ * 确认 gh 可用并拿到凭据。
+ *
+ * 本机实测：gh 把 token 存在 Windows 凭据管理器里，
+ * `gh auth status` 会误报「未登录」，但 `gh auth token` 能正常取到。
+ * 所以这里以能否取到 token 为准，取到就注入 GH_TOKEN 供后续调用。
+ */
+function ensureGhAuth() {
+  try {
+    gh('auth', 'status');
+    return {};
+  } catch {
+    // 退一步：直接取 token
+  }
+  let token = '';
+  try {
+    token = execFileSync('gh', ['auth', 'token'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+  } catch {
+    console.error('gh 未登录，且取不到 token。请先执行：gh auth login');
+    process.exit(3);
+  }
+  if (!token) {
+    console.error('gh 未登录。请先执行：gh auth login');
+    process.exit(3);
+  }
+  console.log('（gh auth status 误报未登录，已改用 gh auth token 注入凭据）');
+  return { ...process.env, GH_TOKEN: token };
 }
 
-// 前置检查：gh 必须可用且已登录，否则推到一半失败更难收拾
-try {
-  gh('auth', 'status');
-} catch {
-  console.error('gh 未安装或未登录。请先执行：gh auth login');
-  process.exit(3);
+function gh(...a) {
+  return execFileSync('gh', a, { encoding: 'utf8', env: GH_ENV }).trim();
 }
+
+const GH_ENV = ensureGhAuth();
 
 const dirty = git('status', '--porcelain');
 if (!dirty) {
