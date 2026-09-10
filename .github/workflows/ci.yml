@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  verify:
+    name: 类型检查 / 单元测试 / 构建
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 类型检查
+        run: npm run typecheck
+
+      - name: 单元测试（真实 SQLite，非 mock）
+        run: npm run test
+
+      - name: 生产构建
+        run: npx vite build
+
+      - name: 确认构建产物完整
+        run: |
+          test -f dist/index.html
+          test -f dist/sw.js
+          test -n "$(ls dist/assets/sqlite3-*.wasm)"
+
+  e2e:
+    name: 端到端冒烟（真实浏览器）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 安装 Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: 构建
+        run: npx vite build
+
+      # 必须用带 COOP/COEP 的服务器：opfs-sahpool 依赖 SharedArrayBuffer
+      - name: 启动静态服务器
+        run: |
+          node scripts/serve-static.mjs dist > /tmp/serve.log 2>&1 &
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:4173/ > /dev/null; then echo "服务器已就绪"; exit 0; fi
+            sleep 1
+          done
+          echo "服务器启动失败"; cat /tmp/serve.log; exit 1
+
+      - name: 校验必需的跨源隔离响应头
+        run: |
+          H=$(curl -sI http://127.0.0.1:4173/ | tr -d '\r')
+          echo "$H" | grep -qi 'cross-origin-opener-policy: same-origin' || { echo "缺少 COOP"; exit 1; }
+          echo "$H" | grep -qi 'cross-origin-embedder-policy: require-corp' || { echo "缺少 COEP"; exit 1; }
+
+      - name: 端到端冒烟
+        env:
+          SMOKE_BASE: http://127.0.0.1:4173/
+        run: |
+          node scripts/smoke-flow.mjs
+          node scripts/verify-import.mjs
+          node scripts/verify-kiosk-entry.mjs

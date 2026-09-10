@@ -3,8 +3,11 @@ import { chromium } from 'playwright';
 const BASE = process.env.SMOKE_BASE ?? 'http://127.0.0.1:5178/';
 const errors = [];
 
+// 本地默认用系统 Edge（本项目的 Playwright 跳过了浏览器下载）；
+// CI 上传 SMOKE_CHANNEL=chromium 走 Playwright 自带浏览器。
+const CHANNEL = process.env.SMOKE_CHANNEL ?? 'msedge';
 const browser = await chromium.launch({
-  channel: 'msedge',
+  channel: CHANNEL,
   args: ['--no-sandbox']
 });
 const ctx = await browser.newContext();

@@ -1,7 +1,13 @@
 /** 截取新入口：侧边栏布局（菜单预览并入上方）+ 顶栏按钮 + 展会配置/商品页的预览入口。 */
 import { chromium } from 'playwright';
 const BASE = process.env.SMOKE_BASE ?? 'http://127.0.0.1:5178/';
-const browser = await chromium.launch({ channel: 'msedge', args: ['--no-sandbox'] });
+// 本地默认用系统 Edge（本项目的 Playwright 跳过了浏览器下载）；
+// CI 上传 SMOKE_CHANNEL=chromium 走 Playwright 自带浏览器。
+const CHANNEL = process.env.SMOKE_CHANNEL ?? 'msedge';
+const browser = await chromium.launch({
+  ...(CHANNEL ? { channel: CHANNEL } : {}),
+  args: ['--no-sandbox']
+});
 const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
 ctx.on('dialog', (d) => d.accept());
 const page = await ctx.newPage();
