@@ -9,7 +9,7 @@
  * 流程：同步 base → 创建分支 → 提交全部改动 → 推送 → 用 gh 建 PR。
  * 前置：工作区有未提交改动，且当前在 base 分支上。
  *
- * 本机环境的三个坑，代码里都做了规避（别改回去）：
+ * 本机环境的四个坑，代码里都做了规避（别改回去）：
  *
  *  1. 分支名不能带斜杠。.git/refs/heads/ 下的子目录留不住，
  *     `git checkout -b feat/x` 会「报告成功」但引用没写出来，HEAD 变成 unborn，
@@ -22,6 +22,9 @@
  *
  *  3. gh 不一定在 PATH 里（winget 装完已开的终端不会刷新 PATH）。
  *     所以会去常见安装位置找一遍。
+ *
+ *  4. `gh pr create` 也必须显式传 --head：它默认靠 refs/remotes/origin/<分支>
+ *     判断 head，掉进和坑 2 同一个问题里。
  */
 import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
@@ -201,7 +204,10 @@ try {
 }
 
 console.log('5/6 创建 PR…');
-const prArgs = ['pr', 'create', '--base', base, '--title', title, '--body', body || title];
+// 必须显式传 --head：gh 默认靠远端跟踪引用 refs/remotes/origin/<分支> 判断 head，
+// 而本机存不住那个引用（同坑 1、坑 2），实测会报
+// "aborted: you must first push the current branch to a remote, or use the --head flag"。
+const prArgs = ['pr', 'create', '--base', base, '--head', branch, '--title', title, '--body', body || title];
 if (has('draft')) prArgs.push('--draft');
 
 let url = '';
