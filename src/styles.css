@@ -566,6 +566,43 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
        顺带把第 1 步漏掉的那处魔数一起清掉了。 */
   }
 
+
+/* --------------------------------------------------- 应用内说明书
+   内容来自构建期转换的 README.md，结构是生成出来的，
+   样式按 .manual 容器限定，不影响其它页面里的 table / blockquote。 */
+.manual { max-width: 720px; margin: 0 auto; padding: 8px 4px 64px; }
+.manual h1 { font-size: 1.375rem; font-weight: 500; margin: 12px 0 4px; }
+.manual h2 {
+  font-size: 1.0625rem;
+  font-weight: 500;
+  margin: 26px 0 6px;
+  padding-top: 14px;
+  border-top: 0.5px solid var(--line);
+}
+.manual h3 { font-size: 0.9375rem; font-weight: 500; margin: 18px 0 4px; }
+.manual h4 { font-size: 0.875rem; font-weight: 500; margin: 14px 0 4px; }
+.manual p { margin: 8px 0; text-wrap: pretty; }
+.manual ul, .manual ol { margin: 8px 0; padding-left: 22px; }
+.manual li { margin: 5px 0; }
+.manual blockquote {
+  margin: 12px 0;
+  padding: 10px 14px;
+  background: var(--accent-soft);
+  border-radius: 8px;
+}
+.manual blockquote p { margin: 4px 0; }
+.manual code {
+  background: var(--surface-2);
+  padding: 1px 6px;
+  border-radius: 6px;
+  font-size: 0.85em;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+}
+.manual table { margin: 12px 0; }
+.manual th { background: var(--surface-2); font-weight: 500; }
+.manual a { color: var(--accent); }
+.manual hr { border: none; border-top: 0.5px solid var(--line); margin: 22px 0; }
+
 /* --------------------------------------------------- 尊重系统「减少动效」
    晕动症用户会在系统里关掉动效；本应用里的动效都很短（120ms），
    关掉之后功能不受任何影响，只是少了确认反馈。 */
