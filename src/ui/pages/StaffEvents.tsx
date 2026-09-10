@@ -28,6 +28,7 @@ import { setCurrentEventId } from '../../services/system';
 import { formatMoney, minorToInput, parseAmountToMinor } from '../../domain/money';
 import { errorMessage, useApp } from '../../store';
 import AssetEditor from '../AssetEditor';
+import { validateEventDates } from '../../domain/event-dates';
 import { ErrorBox, Field, Spinner, useAsync } from '../components';
 import AddProductsModal from './AddProductsModal';
 import type { Currency } from '../../domain/types';
@@ -91,6 +92,12 @@ export default function StaffEventsPage() {
   );
 }
 
+/* 展会日期的合理范围。
+   浏览器的日期框年份段允许键入 6 位数（HTML 原生行为，规格上限 275760 年），
+   不是表单代码的 bug；用 min/max 圈住可选范围，提交时再校验兜底。 */
+const EVENT_DATE_MIN = '2020-01-01';
+const EVENT_DATE_MAX = '2035-12-31';
+
 function CreateEventModal({
   onClose,
   onCreated
@@ -125,10 +132,10 @@ function CreateEventModal({
               </select>
             </Field>
             <Field label="开始日期（当地日期）">
-              <input type="date" value={start} onChange={(e) => setStart(e.target.value)} />
+              <input type="date" min={EVENT_DATE_MIN} max={EVENT_DATE_MAX} value={start} onChange={(e) => setStart(e.target.value)} />
             </Field>
             <Field label="结束日期">
-              <input type="date" value={end} onChange={(e) => setEnd(e.target.value)} />
+              <input type="date" min={EVENT_DATE_MIN} max={EVENT_DATE_MAX} value={end} onChange={(e) => setEnd(e.target.value)} />
             </Field>
           </div>
           <ErrorBox message={error} />
@@ -141,6 +148,12 @@ function CreateEventModal({
             className="primary"
             disabled={busy || !name.trim()}
             onClick={async () => {
+              // 日期校验（原生年份段允许键入 6 位数，提交时兜底）
+              const dateError = validateEventDates(start || null, end || null);
+              if (dateError) {
+                setError(dateError);
+                return;
+              }
               setBusy(true);
               setError(null);
               try {
