@@ -1,5 +1,5 @@
 /** 线上部署验证：响应头 + 新设计特征是否都在产物里。 */
-const base = 'https://d0a4166b6973444faaf7e2ef6e9724cd.app.workbuddy.link';
+const base = 'https://doujin-pos-52877.app.workbuddy.host';
 
 (async () => {
   const r = await fetch(base + '/');
