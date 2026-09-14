@@ -198,6 +198,14 @@ table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
 th, td { padding: 8px 10px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
 th { font-weight: 600; color: var(--ink-2); background: var(--surface-2); position: sticky; top: 0; }
 td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* 手机竖屏下表格列会被压成碎片（表头竖排成四个字、数字挤成一条线）。
+   做法：列头不换行、表格按内容撑开，溢出的部分交给 .table-wrap 横向滚动；
+   而不是硬设一个最小宽度——那样连三四列的窄表也会被迫横向滚动。 */
+@media (max-width: 720px) {
+  .table-wrap th { white-space: nowrap; }
+  .table-wrap table { width: max-content; min-width: 100%; }
+}
 .table-wrap { overflow: auto; max-height: 62vh; border: 1px solid var(--line); border-radius: 12px; }
 
 /* --------------------------------------------------- 弹层 */
