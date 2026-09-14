@@ -3,7 +3,6 @@ import { useEffect, useState } from 'react';
 import { getActiveEvent, listEvents } from '../../services/events';
 import { getDashboard } from '../../services/reports';
 import { getCurrentEventId, setCurrentEventId, shouldRemindBackup } from '../../services/system';
-import { formatMoney } from '../../domain/money';
 import type { Event } from '../../domain/types';
 import { useApp } from '../../store';
 import { ErrorBox, Spinner, useAsync } from '../components';
@@ -100,21 +99,17 @@ export default function HomePage() {
 
             {dash.data ? (
               <div className="stat-grid" style={{ marginTop: 14 }}>
-                <div className="stat">
-                  <div className="label">销售额</div>
-                  <div className="value">{formatMoney(dash.data.salesMinor, current.currency)}</div>
-                </div>
-                <div className="stat">
-                  <div className="label">退款额</div>
-                  <div className="value">{formatMoney(dash.data.refundMinor, current.currency)}</div>
-                </div>
-                <div className="stat">
-                  <div className="label">净销售额</div>
-                  <div className="value">{formatMoney(dash.data.netSalesMinor, current.currency)}</div>
-                </div>
+                {/* 首页不放销售额/退款额/净销售额：这一页可能就摆在本摊台上，
+                    游客站着就能看到。金额改去「报表收摊」看（那页在后台锁保护内）。 */}
                 <div className="stat">
                   <div className="label">待付款</div>
                   <div className="value">{dash.data.counts.pending_payment}</div>
+                </div>
+                <div className="stat">
+                  <div className="label">销售数据</div>
+                  <div className="value" style={{ fontSize: '0.9rem', fontWeight: 500 }}>
+                    见「报表收摊」
+                  </div>
                 </div>
               </div>
             ) : null}
