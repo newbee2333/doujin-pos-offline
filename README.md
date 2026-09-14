@@ -1,6 +1,6 @@
 # 同人摊位电子菜单 · 使用说明书
 
-> **在线使用**：https://d0a4166b6973444faaf7e2ef6e9724cd.app.workbuddy.link
+> **在线使用**：https://doujin-pos-52877.app.workbuddy.host
 > 构建与部署等**开发者文档**见 [docs/开发文档.md](docs/开发文档.md)。
 给摊主（和帮摊的朋友）看的操作手册。按"摆摊前 → 摆摊中 → 收摊后"的时间线组织，遇到问题查最后一节。
 
