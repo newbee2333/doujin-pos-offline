@@ -204,6 +204,17 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 /* 手机竖屏下表格列会被压成碎片（表头竖排成四个字、数字挤成一条线）。
    做法：列头不换行、表格按内容撑开，溢出的部分交给 .table-wrap 横向滚动；
    而不是硬设一个最小宽度——那样连三四列的窄表也会被迫横向滚动。 */
+/* 表头一律不换行。之前只在 ≤820 的媒体查询里写，桌面宽度（1280）下不生效，
+   于是「数量」被压成「数 / 量」两行、「金额」同样——报表页就是这么坏的。 */
+.table-wrap th { white-space: nowrap; }
+
+/* 成对出现的卡片（报表页的 商品排行 / 库存成分消耗）在窄屏改为上下堆叠。
+   .grid.cols-2 用的是 auto-fill + minmax(240px,1fr)，820 宽下仍会并排，
+   每张卡只剩半宽，表格被裁到看不见（iPad 竖屏截图里的「¥105.00」就是这么断的）。 */
+@media (max-width: 900px) {
+  .grid.cols-2 { grid-template-columns: 1fr; }
+}
+
 /* 阈值取 820 而不是 720：iPad 竖屏正好是 820 宽，用 720 会让它在区间外——
    这正是报表页在 iPad 竖屏下表头被压成竖排的原因。
    注意 max-content + min-width:100% 的组合：窄表（max-content < 100%）实际宽度仍是 100%，
