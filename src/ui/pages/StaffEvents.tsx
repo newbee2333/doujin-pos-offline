@@ -29,6 +29,7 @@ import { formatMoney, minorToInput, parseAmountToMinor } from '../../domain/mone
 import { errorMessage, useApp } from '../../store';
 import AssetEditor from '../AssetEditor';
 import { validateEventDates } from '../../domain/event-dates';
+import { AdjustStockModal } from '../AdjustStockModal';
 import { ErrorBox, Field, Spinner, useAsync } from '../components';
 import AddProductsModal from './AddProductsModal';
 import type { Currency } from '../../domain/types';
@@ -197,6 +198,7 @@ function EventDetail({
   const products = useAsync(() => listProducts({ archived: false }), []);
   const cats = useAsync(() => listCategories(true), []);
   const [ready, setReady] = useState<string[] | null>(null);
+  const [stockTarget, setStockTarget] = useState<{ variantId: string; name: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -534,7 +536,17 @@ function EventDetail({
                         }}
                       />
                     ) : (
-                      c.initial_stock
+                      // 已设过库存：数字本身不可改，改动必须走「调整」——要选原因并记入流水
+                      <span className="row tight" style={{ justifyContent: 'flex-end', gap: 6 }}>
+                        <span>{c.initial_stock}</span>
+                        <button
+                          className="small ghost"
+                          title="调整库存（需选择原因，会记入流水）"
+                          onClick={() => setStockTarget({ variantId: c.variant_id, name: c.product_name })}
+                        >
+                          调整
+                        </button>
+                      </span>
                     )}
                   </td>
                   <td className="num">
@@ -588,6 +600,19 @@ function EventDetail({
             </tbody>
           </table>
         </div>
+
+        {stockTarget ? (
+          <AdjustStockModal
+            eventId={eventId}
+            variantId={stockTarget.variantId}
+            name={stockTarget.name}
+            onClose={() => setStockTarget(null)}
+            onDone={() => {
+              setStockTarget(null);
+              configs.reload();
+            }}
+          />
+        ) : null}
 
         {selected.size ? (
           <div className="row" style={{ marginTop: 8 }}>
