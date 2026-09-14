@@ -68,7 +68,9 @@ export default function PreviewPage() {
         <div className="kiosk-hero">
           <div className="kiosk-hero-top">
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div className="kiosk-hero-title">商品目录</div>
+              {/* 必须保留「（预览）」：预览画框要一眼能看出不是真实游客菜单，
+                  否则截图/投屏时可能被当成顾客界面。CI 有断言守着这一点。 */}
+              <div className="kiosk-hero-title">商品目录（预览）</div>
               <div className="kiosk-hero-sub">共 {filtered.length} 件在售</div>
             </div>
           </div>
