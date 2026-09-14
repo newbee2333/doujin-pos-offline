@@ -1,9 +1,9 @@
 /**
  * 导入用的 file input 属性——iOS 与 Android 的正确解法是相反的。
  *
- * Android：裸的 `<input type="file">` 在部分浏览器里会退化成**媒体选择器**
+ * Android：裸的 `<input type="file">` 在部分设备上会退化成**媒体选择器**
  *   （只给「拍照 / 录像 / 照片和视频」，没有「文件」入口），
- *   导致用户根本无法选中 .sqlite3 备份文件。把 accept 设成通配值才会出现文件入口。
+ *   导致用户根本无法选中 .sqlite3 备份文件。这里按文档类 MIME 列表给（见下方常量说明）。
  *
  * iOS Safari：不能写具体的 accept 类型。iOS 按系统 UTI 过滤，
  *   `.sqlite3` / `.db` / `application/x-sqlite3` 都没有对应 UTI，
@@ -13,9 +13,31 @@
  * 所以这里放宽 accept 不会造成误收。
  */
 
+/**
+ * Android 用的 accept 值（**实验性**）。
+ *
+ * 实机过程：安卓上 `accept` 完全不设 → 只弹「拍照 / 录像 / 照片和视频」；
+ * 改成通配值 → 仍然只弹媒体面板（Edge 152 / Chrome / Firefox 表现一致），
+ * 但系统「文件」App 里浏览到「下载」是能选中 .sqlite3 的 —— 说明选择器本身正常，
+ * 是浏览器把这次请求当成了媒体请求。
+ *
+ * 这里按实测资料的做法，把**明确的文档类型**列进去（尤其 application/pdf 与
+ * application/octet-stream），期望把浏览器踢回通用文档选择器。
+ * 属于待真机确认的实验，不成的备选方案是 Web Share Target。
+ */
+const ANDROID_DOCUMENT_ACCEPT = [
+  '.sqlite3',
+  '.sqlite',
+  '.db',
+  'application/vnd.sqlite3',
+  'application/x-sqlite3',
+  'application/octet-stream',
+  'application/pdf'
+].join(',');
+
 /** 返回应设置的 accept 值；`undefined` 表示不设该属性。 */
 export function importFileAccept(userAgent: string): string | undefined {
-  return /Android/i.test(userAgent) ? '*/*' : undefined;
+  return /Android/i.test(userAgent) ? ANDROID_DOCUMENT_ACCEPT : undefined;
 }
 
 /** 选不中文件时的排查提示，各平台指向各自的文件管理器。 */

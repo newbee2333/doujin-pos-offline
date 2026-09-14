@@ -16,8 +16,16 @@ const UA_DESKTOP =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
 describe('importFileAccept', () => {
-  it('Android 用通配 accept，否则弹不出「文件」入口', () => {
-    expect(importFileAccept(UA_ANDROID)).toBe('*/*');
+  it('Android 给出文档类 MIME 列表（含明确文档类型，用于唤出通用选择器）', () => {
+    const v = importFileAccept(UA_ANDROID);
+    expect(v).toBeDefined();
+    // 关键：必须有明确的文档类型，不能只给媒体类型或通配
+    expect(v).toContain('application/pdf');
+    expect(v).toContain('application/octet-stream');
+    expect(v).toContain('.sqlite3');
+    // 不能出现图片/视频类型，否则会把请求变成媒体选择
+    expect(v).not.toContain('image/');
+    expect(v).not.toContain('video/');
   });
 
   it('iOS 不设 accept（设了 .sqlite3 会被置灰选不中）', () => {
