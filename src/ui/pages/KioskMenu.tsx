@@ -137,22 +137,31 @@ export default function KioskMenuPage() {
 
   return (
     <div className="kiosk" onPointerDown={touch} onKeyDown={touch}>
-      <div className="kiosk-header">
-        <span className="title">商品目录</span>
-        <input
-          type="search"
-          placeholder="搜索商品名或 SKU"
-          value={keyword}
-          onChange={(e) => {
-            setKeyword(e.target.value);
-            touch();
-          }}
-          style={{ maxWidth: 320 }}
-        />
-        <span className="spacer" />
-        <button className="small ghost" onClick={() => navigate('/staff/pending')}>
-          摊主处理
-        </button>
+      <div className="kiosk-hero">
+        <div className="kiosk-hero-top">
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="kiosk-hero-title">商品目录</div>
+            <div className="kiosk-hero-sub">共 {filtered.length} 件在售</div>
+          </div>
+          <button className="small ghost" onClick={() => navigate('/staff/pending')}>
+            摊主处理
+          </button>
+        </div>
+        <div className="kiosk-search">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
+            <circle cx="11" cy="11" r="7" />
+            <path d="M20 20l-3.2-3.2" />
+          </svg>
+          <input
+            type="search"
+            placeholder="搜索商品名 / 分类"
+            value={keyword}
+            onChange={(e) => {
+              setKeyword(e.target.value);
+              touch();
+            }}
+          />
+        </div>
       </div>
 
       <div className="chip-row">

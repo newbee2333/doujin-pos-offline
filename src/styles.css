@@ -233,33 +233,93 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 18px; flex-wrap: wrap; }
 
 /* --------------------------------------------------- 菜单（游客） */
-.kiosk { min-height: 100%; display: flex; flex-direction: column; background: var(--bg); container-type: inline-size; }
+/* 游客菜单的设计令牌：只在 .kiosk 内生效，后台仍是暖色主题。
+   颜色取自参照站的真实计算样式（2026-09-14 改版）。 */
+.kiosk {
+  --k-bg: #f8fafc;
+  --k-ink: #334155;
+  --k-ink-2: #64748b;
+  --k-ink-3: #94a3b8;
+  --k-line: #e2e8f0;
+  --k-accent: #f16884;
+  /* 覆盖全局 accent：chips 选中态、加购按钮因此变成玫粉 */
+  --accent: #f16884;
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--k-bg);
+  color: var(--k-ink);
+  container-type: inline-size;
+}
+/* 游客流程各页（菜单/购物车/结算/订单/说明书/预览）共用的页头：返回 + 标题。
+   改版时统一成白底无下边框，避免只有菜单变新、后续页面还是旧的暖色描边。 */
 .kiosk-header {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 14px 18px;
-  background: var(--surface);
-  border-bottom: 1px solid var(--line);
+  padding: 14px 16px;
+  background: #fff;
   position: sticky;
   top: 0;
   z-index: 10;
   flex-wrap: wrap;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
 }
-.kiosk-header .title { font-size: var(--fs-title); font-weight: 500; }
-.chip-row { display: flex; gap: 8px; overflow-x: auto; padding: 12px 18px 4px; }
+.kiosk-header .title { font-size: var(--fs-title); font-weight: 700; color: var(--k-ink, var(--ink)); }
+
+.kiosk-hero {
+  background: #fff;
+  border-radius: 0 0 24px 24px;
+  padding: 14px 16px 16px;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+.kiosk-hero-top { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.kiosk-hero-title { font-size: 1.0625rem; font-weight: 700; }
+.kiosk-hero-sub { font-size: var(--fs-meta); color: var(--k-ink-3); margin-top: 1px; }
+.kiosk-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #f1f5f9;
+  border-radius: 999px;
+  padding: 0 14px;
+}
+.kiosk-search svg { flex: none; color: var(--k-ink-3); }
+.kiosk-search input {
+  flex: 1;
+  border: 0;
+  background: transparent;
+  outline: none;
+  padding: 0;
+  min-height: var(--tap);
+  font-size: var(--fs-name);
+  color: var(--k-ink);
+}
+.kiosk-search input::placeholder { color: var(--k-ink-3); }
+.chip-row {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 14px 16px 2px;
+  scrollbar-width: none;
+}
+.chip-row::-webkit-scrollbar { display: none; }
 .chip {
   padding: 10px 16px;
   border-radius: 999px;
-  border: 1px solid var(--line);
-  background: var(--surface);
+  border: 1px solid var(--k-line, var(--line));
+  background: #fff;
   min-height: var(--tap);
   white-space: nowrap;
   cursor: pointer;
+  color: var(--k-ink-2, var(--ink-2));
   font-size: var(--fs-name);
   transition: background-color 120ms ease, border-color 120ms ease;
 }
-.chip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.chip.active { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
 .chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* 列数按「容器」宽度决定，不再用 auto-fill 让浏览器自己算。
@@ -269,8 +329,8 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
    现在写死列数，"一屏看到几个"也从"碰巧"变成可预测。 */
 .menu-grid {
   display: grid;
-  gap: 14px;
-  padding: 14px 18px calc(var(--cart-bar-h) + 16px);
+  gap: 12px;
+  padding: 14px 16px calc(var(--cart-bar-h) + 20px);
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 @container (min-width: 620px) {
@@ -378,89 +438,126 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
    卡片高度由宽度决定，iPad 横屏一屏只能完整放下一行（3–5 个）。
    现在把品名压成封面上的覆盖条、价格与按钮并成一行，
    把省下的竖向空间还给封面 —— 4 列 × 2 行 = 8 个才放得下。 */
+/* 卡片：白底、圆角 20px、图片 1:1、品名在图片下方（2026-09-14 改版）。
+   注意：这里所有规则都带 .menu-card-cover，摊主收银的卡片不带这个类，
+   所以收银台不受影响。 */
 .menu-card-cover {
-  border-radius: var(--radius-card);
-  border-width: var(--line-hair);
+  background: #fff;
+  border: 0;
+  border-radius: 20px;
+  padding: 8px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
 }
-.menu-card-cover .menu-card-info { position: relative; display: block; }
-/* 封面窗口 6:5。object-position: center top —— 竖版封面按「填满」缩放后
-   优先露出顶部，保住封面顶部的书名区，只裁底部（用户选定的裁切策略）。 */
+.menu-card-cover .menu-card-info { display: block; }
+.menu-card-cover .thumb-wrap { position: relative; display: block; }
+/* 封面窗口 1:1。object-position: center top —— 竖版封面按「填满」缩放后
+   优先露出顶部，保住封面顶部的书名区，只裁底部（沿用原有裁切策略）。 */
 .menu-card-cover .thumb,
 .menu-card-cover .thumb-placeholder {
   width: 100%;
-  aspect-ratio: 6 / 5;
+  aspect-ratio: 1 / 1;
   object-fit: cover;
   object-position: center top;
   display: block;
+  border-radius: 12px;
 }
-.menu-card-cover .caption {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  padding: 22px 10px 8px;
-  /* 功能性渐变遮罩，只为保证白字压在任意封面上都可读，不是装饰性渐变 */
-  background: linear-gradient(to top, rgba(20, 17, 15, 0.84), rgba(20, 17, 15, 0));
-  display: block;
+.menu-card-cover .thumb-placeholder {
+  background: #eef2f6;
+  color: var(--k-ink-3, #94a3b8);
+  font-size: var(--fs-meta);
+  display: grid;
+  place-items: center;
 }
+.menu-card-cover .caption { display: block; padding: 9px 4px 2px; }
 .menu-card-cover .caption .name {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
   font-size: var(--fs-name);
-  font-weight: 500;
-  color: #fff;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--k-ink, var(--ink));
+  /* 固定两行高度：品名长短不一时，卡片底部仍对齐 */
+  min-height: 2.7em;
+}
+.menu-card-cover .caption .sub {
   display: block;
+  margin-top: 2px;
+  font-size: var(--fs-meta);
+  color: var(--k-ink-3, var(--ink-2));
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  text-wrap: pretty;
 }
-.menu-card-cover .caption .variant { font-size: var(--fs-meta); color: rgba(255, 255, 255, 0.78); }
+/* 库存标签放右上角：同人志封面大多把书名放在左上或居中，左上角标签会压住书名 */
 .menu-card-cover .stock-tag {
   position: absolute;
-  /* 放右上角：同人志封面大多把书名放在左上或居中，左上角标签会压住书名 */
   top: 8px;
   right: 8px;
   font-size: var(--fs-meta);
-  font-weight: 500;
-  padding: 3px 9px;
+  font-weight: 700;
+  padding: 3px 10px;
   border-radius: 999px;
-  background: var(--ok);
+  background: rgba(15, 23, 42, 0.45);
   color: #fff;
+  backdrop-filter: blur(4px);
 }
-.menu-card-cover .stock-tag.warn { background: var(--warn); }
-.menu-card-cover .stock-tag.danger { background: var(--danger); }
-/* flat 用于「还剩多少」这类不需要警报的信息，安静一点不抢封面 */
-.menu-card-cover .stock-tag.flat { background: rgba(38, 34, 31, 0.5); }
+.menu-card-cover .stock-tag.warn { background: rgba(217, 119, 6, 0.92); }
+.menu-card-cover .stock-tag.danger { background: rgba(220, 38, 38, 0.92); }
+.menu-card-cover .stock-tag.flat { background: rgba(15, 23, 42, 0.45); }
 .menu-card-cover .sold-veil {
   position: absolute;
   inset: 0;
-  background: rgba(38, 34, 31, 0.55);
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.48);
   display: flex;
   align-items: center;
   justify-content: center;
 }
 .menu-card-cover .sold-mark {
-  background: var(--danger);
+  background: rgba(220, 38, 38, 0.92);
   color: #fff;
   font-size: var(--fs-name);
-  font-weight: 500;
+  font-weight: 600;
   padding: 7px 18px;
   border-radius: 999px;
 }
 .menu-card-cover .menu-card-action {
+  border-top: 0;
+  background: transparent;
+  padding: 6px 4px 4px;
   justify-content: space-between;
-  gap: 10px;
-  padding: 8px 10px;
-  border-top-width: var(--line-hair);
+  align-items: center;
+  gap: 8px;
+  /* 允许换行：购物车里有数量时，步进器放不下就掉到第二行，不挤价格 */
+  flex-wrap: wrap;
 }
 .menu-card-cover .menu-card-action .price {
-  font-size: var(--fs-price);
-  font-weight: 500;
-  color: var(--accent);
+  font-size: 1.0625rem;
+  font-weight: 700;
+  color: var(--k-accent, var(--accent));
   font-variant-numeric: tabular-nums;
 }
-.menu-card-cover .add-btn { width: auto; padding: 0 16px; font-weight: 500; font-size: var(--fs-name); }
-.menu-card-cover.sold-out .thumb { opacity: 0.6; filter: grayscale(0.9); }
-.menu-card-cover.sold-out .price { color: var(--ink-2); }
+/* 加购按钮：圆形。仍是 --tap（46px）——排队场景误触的代价直接是收错单 */
+.menu-card-cover .add-btn {
+  width: var(--tap);
+  height: var(--tap);
+  min-height: var(--tap);
+  padding: 0;
+  border-radius: 50%;
+  font-size: 1.4rem;
+  font-weight: 400;
+  line-height: 1;
+  display: grid;
+  place-items: center;
+  flex: none;
+  box-shadow: 0 2px 6px rgba(241, 104, 132, 0.4);
+}
+.menu-card-cover .add-btn:hover { background: #d94f6c; }
+.menu-card-cover.sold-out .thumb,
+.menu-card-cover.sold-out .thumb-placeholder { opacity: 0.55; filter: grayscale(0.9); }
+.menu-card-cover.sold-out .price { color: var(--k-ink-3, var(--ink-2)); }
 
 /* 购物车里的商品小图。
    封面是竖版，所以小图也保持竖构图；object-position 与卡片一致（重心上移）。
@@ -479,30 +576,40 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 
 .cart-bar {
   position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  /* 显式高度，与 --cart-bar-h 绑定；菜单网格的底部留白由同一个变量算出 */
-  min-height: var(--cart-bar-h);
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  min-height: 64px;
   box-sizing: border-box;
-  background: var(--surface);
-  border-top: 1px solid var(--line);
-  padding: 12px 18px;
+  background: #0f172a;
+  color: #fff;
+  border: 0;
+  border-radius: 16px;
+  padding: 12px 14px;
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
   z-index: 20;
-  box-shadow: 0 -4px 20px rgba(38, 34, 31, 0.08);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.25);
 }
 .cart-bar .spacer { flex: 1; }
+.cart-bar .strong { color: #fff; font-weight: 700; font-variant-numeric: tabular-nums; }
 .cart-bar .count {
-  background: var(--accent);
+  background: var(--k-accent, var(--accent));
   color: #fff;
   border-radius: 999px;
   padding: 2px 10px;
-  font-size: 0.85rem;
+  font-size: 0.8rem;
   font-weight: 700;
 }
+/* 深色条上的按钮改白底深字，保证对比度 */
+.cart-bar button {
+  background: #fff;
+  color: #0f172a;
+  border: 0;
+  font-weight: 600;
+}
+.cart-bar button:disabled { opacity: 0.45; }
 
 .qty { display: inline-flex; align-items: center; gap: 2px; }
 /* 数量增减原来 38×38，是全站误触代价最高的控件（直接改金额），提到 --tap */
