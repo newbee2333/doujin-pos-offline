@@ -1,7 +1,11 @@
-/*
-  Netlify / Cloudflare Pages：把本文件放到发布目录（dist/）根目录，改名 `_headers`。
-  opfs-sahpool 依赖 SharedArrayBuffer，必须跨源隔离；这两个头漏掉应用会直接拒绝启动。
-*/
+# Netlify / Cloudflare Pages 响应头配置。
+# 用法：放到发布目录根目录、文件名 `_headers`（build-publish.mjs 会自动复制过来）。
+#
+# 这个应用必须有 COOP/COEP：opfs-sahpool 依赖 SharedArrayBuffer，
+# 缺了这两个头会直接显示「当前环境不能营业」——不是降级运行，是拒绝启动。
+#
+# 注意：本文件的注释只能用 `#`。写成 /* ... */ 会被当成路径规则，
+# 真正的头配置反而失效（这个文件之前就是这么坏的）。
 
 /*
   Cross-Origin-Opener-Policy: same-origin
@@ -16,4 +20,3 @@
 
 /sw.js
   Cache-Control: no-cache
-*/
