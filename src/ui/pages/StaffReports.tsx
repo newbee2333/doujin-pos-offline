@@ -128,7 +128,7 @@ export default function StaffReportsPage() {
         </div>
       </div>
 
-      <div className="grid cols-2">
+      <div className="col">
         <div className="card">
           <h2>商品排行</h2>
           <div className="table-wrap">
