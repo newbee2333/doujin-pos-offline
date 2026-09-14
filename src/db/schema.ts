@@ -307,6 +307,21 @@ export const INITIAL_SCHEMA: string[] = [
   )`
 ];
 
+/**
+ * 应用运行所需的表名，从建表语句里提取，避免手工维护第二份清单。
+ * 导入校验用它判定「文件结构是否完整」——SQLite 文件能打开不代表应用要用的表都在。
+ */
+export const REQUIRED_TABLES: string[] = Array.from(
+  new Set(
+    INITIAL_SCHEMA.flatMap((sql) =>
+      Array.from(sql.matchAll(/CREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?\s+"?([A-Za-z_][A-Za-z0-9_]*)"?/gi)).map(
+        (m) => m[1]
+      )
+    )
+  )
+);
+
+
 export interface Migration {
   fromVersion: number;
   toVersion: number;
