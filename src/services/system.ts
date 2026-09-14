@@ -203,6 +203,10 @@ export async function stageImport(bytes: Uint8Array): Promise<ReplacePreview> {
 
 export async function commitImport(): Promise<Slot> {
   const { slot } = await db.importCommit();
+  // 关键：启动指针必须跟着切。db.active_slot 只是数据库里的一条 setting，
+  // 而下次启动读的是 localStorage 的启动指针——只写前者的话，
+  // 重开就会打开旧库，表现为"导入成功、重启又变回原来的数据"。
+  storeSlot(slot);
   await setSetting('db.active_slot', slot);
   return slot;
 }

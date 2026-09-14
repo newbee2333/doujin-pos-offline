@@ -224,16 +224,42 @@ export async function buildOrderPlan(
     }
   }
 
-  // 限购：按实际 Variant 消耗量合并普通销售与套装成分
+  // 限购：对本单「实际消耗的每个 variant」逐一检查，而不是只遍历订单直接行。
+  // 只遍历直接行时，没有单独加入购物车的套装成分根本不在 items 里，
+  // 于是"只买套装"可以绕过限量单品的每单限购——而库存需求已经把它算进去了。
+  const consumedByVariant = new Map<string, number>(componentDemand);
   for (const item of items) {
-    const ctx = ctxMap.get(item.variantId);
-    if (!ctx || ctx.purchase_limit === null) continue;
-    const consumed =
-      (componentDemand.get(item.variantId) ?? 0) > 0 && item.productType !== 'bundle'
-        ? componentDemand.get(item.variantId) ?? 0
-        : item.quantity;
+    // 套装自身也是商品，要受自己的限购约束（componentDemand 里只有它的成分，没有它自己）
+    if (item.productType === 'bundle') {
+      consumedByVariant.set(
+        item.variantId,
+        Math.max(consumedByVariant.get(item.variantId) ?? 0, item.quantity)
+      );
+    }
+  }
+  // 成分 variant 可能不在订单直接行里，它们的限购配置要单独查出来
+  const missingIds = Array.from(consumedByVariant.keys()).filter((id) => !ctxMap.has(id));
+  if (missingIds.length) {
+    const extra = await ex().read<VariantContext>(
+      `SELECT v.id AS variant_id, v.name AS variant_name, v.sku, v.archived AS variant_archived,
+              p.id AS product_id, p.name AS product_name, p.type AS product_type, p.archived AS product_archived,
+              p.category_id, cat.hidden AS category_hidden,
+              cfg.event_price_minor, cfg.enabled, cfg.purchase_limit, cfg.kiosk_visible,
+              cfg.show_exact_stock, cfg.low_stock_threshold
+       FROM product_variants v
+       JOIN products p ON p.id = v.product_id
+       LEFT JOIN categories cat ON cat.id = p.category_id
+       LEFT JOIN event_variant_configs cfg ON cfg.variant_id = v.id AND cfg.event_id = ?
+       WHERE v.id IN (${missingIds.map(() => '?').join(',')})`,
+      [eventId, ...missingIds]
+    );
+    for (const r of extra) ctxMap.set(r.variant_id, r);
+  }
+  for (const [variantId, consumed] of consumedByVariant) {
+    const ctx = ctxMap.get(variantId);
+    if (!ctx || ctx.purchase_limit === null || consumed <= 0) continue;
     if (consumed > Number(ctx.purchase_limit)) {
-      issues.push(`「${item.productName}」每单限购 ${ctx.purchase_limit} 件，本单 ${consumed} 件`);
+      issues.push(`「${ctx.product_name}」每单限购 ${ctx.purchase_limit} 件，本单 ${consumed} 件`);
     }
   }
 

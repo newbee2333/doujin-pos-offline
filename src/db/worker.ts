@@ -8,7 +8,7 @@
  */
 
 import sqlite3InitModule from '@sqlite.org/sqlite-wasm';
-import { APPLICATION_ID, APP_VERSION, SCHEMA_VERSION, checkSchemaSupport } from './schema';
+import { APPLICATION_ID, APP_VERSION, REQUIRED_TABLES, SCHEMA_VERSION, checkSchemaSupport } from './schema';
 import { INVARIANT_CHECKS } from './invariants';
 import { buildInitialSchemaSteps, buildMigrationSteps, metaUpsertStep } from './bootstrap';
 import type { Bind, Step, StepResult } from './executor';
@@ -331,6 +331,15 @@ async function importStage(bytes: Uint8Array): Promise<ImportSummary> {
       }
     }
 
+    // 结构完整性：SQLite 文件能打开、完整性检查通过，不代表应用要用的表都在。
+    // 迁移已经跑过，此处 schema 应当与当前版本一致，缺表就是文件损坏。
+    const tableRows = selectAll(cand, "SELECT name FROM sqlite_master WHERE type = 'table'");
+    const present = new Set(tableRows.map((r) => String(r.name)));
+    const missingTables = REQUIRED_TABLES.filter((t) => !present.has(t));
+    if (missingTables.length) {
+      throw new Error(`导入文件缺少应用必需的表：${missingTables.join('、')}`);
+    }
+
     const problems = runInvariantChecks(cand);
     if (problems.length) {
       throw new Error(`业务数据校验未通过：${problems.join('；')}`);
@@ -354,11 +363,16 @@ async function importStage(bytes: Uint8Array): Promise<ImportSummary> {
 function runInvariantChecks(d: any): string[] {
   const problems: string[] = [];
   for (const check of INVARIANT_CHECKS) {
-    let rows: Record<string, unknown>[] = [];
+    let rows: Record<string, unknown>[];
     try {
       rows = selectAll(d, check.sql);
-    } catch {
-      continue; // 旧 schema 可能没有对应表，跳过
+    } catch (e) {
+      // 不能当成「旧 schema 没有这张表」跳过：到这里已经跑过迁移，
+      // 缺表/缺列说明文件结构不完整，必须拒绝导入（否则会把损坏的库切为活动库）。
+      problems.push(
+        `${check.label}：校验无法执行（${e instanceof Error ? e.message : String(e)}）`
+      );
+      continue;
     }
     const count = Number(rows[0] ? Object.values(rows[0])[0] : 0);
     if (count > 0) problems.push(`${check.label}（${count} 处）`);

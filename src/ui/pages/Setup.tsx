@@ -1,7 +1,12 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { commitImport, stageImport, type ReplacePreview } from '../../services/system';
-import { errorMessage, useApp } from '../../store';
+import {
+  commitImport,
+  getCurrentEventId,
+  stageImport,
+  type ReplacePreview
+} from '../../services/system';
+import { errorMessage, openDatabase, resetDatabaseBinding, useApp } from '../../store';
 import { ErrorBox, Spinner } from '../components';
 import { formatBytes } from '../../domain/image';
 
@@ -38,7 +43,18 @@ export default function SetupPage({
     setBusy(true);
     setError(null);
     try {
-      await commitImport();
+      const slot = await commitImport();
+      // 整库替换后，旧库的会话状态不再适用：重新绑定并打开新库，
+      // 清掉购物车与当前订单，重读「当前展会」，并锁定后台
+      // ——导入的可能是另一个数据集的库，它的 PIN 与当前解锁状态无关。
+      resetDatabaseBinding();
+      const status = await openDatabase(slot);
+      const st = useApp.getState();
+      st.setDbStatus(status);
+      st.clearCart();
+      st.setCurrentOrder(null);
+      st.setCurrentEvent(await getCurrentEventId());
+      st.lockStaff();
       showToast('数据库已替换');
       setPreview(null);
       if (onDone) onDone();
