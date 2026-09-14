@@ -14,16 +14,19 @@
  */
 
 /**
- * Android 用的 accept 值（**实验性**）。
+ * Android 用的 accept 值。
  *
- * 实机过程：安卓上 `accept` 完全不设 → 只弹「拍照 / 录像 / 照片和视频」；
- * 改成通配值 → 仍然只弹媒体面板（Edge 152 / Chrome / Firefox 表现一致），
- * 但系统「文件」App 里浏览到「下载」是能选中 .sqlite3 的 —— 说明选择器本身正常，
- * 是浏览器把这次请求当成了媒体请求。
+ * 实机过程（2026-09-14，Android Edge 152 / Chrome / Firefox 表现一致）：
+ *   1. `accept` 完全不设 → 只弹「拍照 / 录像 / 照片和视频」，没有「文件」入口
+ *   2. 改成通配值 → 仍然只有媒体面板，无效
+ *   3. 改成下面的文档类列表 → **可以正常选到 .sqlite3**（真机确认通过）
  *
- * 这里按实测资料的做法，把**明确的文档类型**列进去（尤其 application/pdf 与
- * application/octet-stream），期望把浏览器踢回通用文档选择器。
- * 属于待真机确认的实验，不成的备选方案是 Web Share Target。
+ * 关键是把**明确的文档类型**列进去（尤其 application/pdf 与 application/octet-stream），
+ * 浏览器才会走通用文档选择器，而不是把这次请求当成媒体请求。
+ * 旁证：同一台机器的系统「文件」App 里本来就能选中该文件，说明选择器本身没问题。
+ *
+ * 列出的扩展名（.sqlite3 等）对安卓无效，但对桌面浏览器有意义，留着无害。
+ * 不要往这个列表里加 image/ 或 video/ 类型，否则会退回媒体选择器。
  */
 const ANDROID_DOCUMENT_ACCEPT = [
   '.sqlite3',
