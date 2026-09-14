@@ -65,15 +65,27 @@ export default function PreviewPage() {
         style={{ maxWidth: '100%', width: frame.width, height: frame.height, overflow: 'auto', marginTop: 10 }}
       >
         <div className="preview-badge">预览模式 · 不会产生任何真实业务数据</div>
-        <div className="kiosk-header">
-          <span className="title">商品目录（预览）</span>
-          <input
-            type="search"
-            placeholder="搜索商品名或 SKU"
-            value={keyword}
-            onChange={(e) => setKeyword(e.target.value)}
-            style={{ maxWidth: 280 }}
-          />
+        <div className="kiosk-hero">
+          <div className="kiosk-hero-top">
+            <div style={{ flex: 1, minWidth: 0 }}>
+              {/* 必须保留「（预览）」：预览画框要一眼能看出不是真实游客菜单，
+                  否则截图/投屏时可能被当成顾客界面。CI 有断言守着这一点。 */}
+              <div className="kiosk-hero-title">商品目录（预览）</div>
+              <div className="kiosk-hero-sub">共 {filtered.length} 件在售</div>
+            </div>
+          </div>
+          <div className="kiosk-search">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
+              <circle cx="11" cy="11" r="7" />
+              <path d="M20 20l-3.2-3.2" />
+            </svg>
+            <input
+              type="search"
+              placeholder="搜索商品名 / 分类"
+              value={keyword}
+              onChange={(e) => setKeyword(e.target.value)}
+            />
+          </div>
         </div>
         <div className="chip-row">
           <span className="chip active">全部</span>

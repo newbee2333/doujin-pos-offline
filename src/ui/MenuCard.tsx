@@ -9,8 +9,12 @@ import { stockLabel, type MenuItem } from '../domain/types';
  * 之前两处各自写了一份标记，结果改版只改了游客面，预览仍然显示旧卡片——
  * 而预览的唯一作用就是忠实反映游客面。共用一份能从根上避免再次漂移。
  *
- * 摊主收银有自己的卡片（带 .body 的那一套），不使用本组件，
- * 所以本组件的 class 带 menu-card-cover，样式不会误伤后台。
+ * 摊主收银有自己的卡片（StaffCheckout 里也用 .menu-card，但**不带** .menu-card-cover），
+ * 所以本组件的重排只写在 .menu-card-cover 下，不会误伤收银台。
+ *
+ * 2026-09-14 改版：品名/分类从封面上的覆盖条，改成图片下方的正文块。
+ * 覆盖条方案会把书名压在封面上（同人本封面顶部往往印着书名），
+ * 图片主导的排版下把文字还给图片下方的白底，信息层级更清楚。
  */
 export default function MenuCard({
   item,
@@ -44,6 +48,14 @@ export default function MenuCard({
         ? { text: '少量', kind: 'warn' }
         : null;
 
+  // 副标题：分类 + 非默认规格。两样都没有就整行不渲染，不留空行。
+  const sub = [
+    item.category_name ?? '',
+    item.variant_name && item.variant_name !== '默认规格' ? item.variant_name : ''
+  ]
+    .filter(Boolean)
+    .join(' · ');
+
   return (
     <div className={`menu-card menu-card-cover ${soldOut ? 'sold-out' : ''}`}>
       <button
@@ -52,19 +64,19 @@ export default function MenuCard({
         onClick={onOpenDetail}
         aria-label={`查看 ${item.product_name} 详情`}
       >
-        <AssetImage assetId={item.cover_asset_id} alt={item.product_name} />
-        {tag ? <span className={`stock-tag ${tag.kind}`}>{tag.text}</span> : null}
-        <span className="caption">
-          <span className="name">{item.product_name}</span>
-          {item.variant_name !== '默认规格' ? (
-            <span className="variant">{item.variant_name}</span>
+        <span className="thumb-wrap">
+          <AssetImage assetId={item.cover_asset_id} alt={item.product_name} />
+          {tag ? <span className={`stock-tag ${tag.kind}`}>{tag.text}</span> : null}
+          {soldOut ? (
+            <span className="sold-veil">
+              <span className="sold-mark">售罄</span>
+            </span>
           ) : null}
         </span>
-        {soldOut ? (
-          <span className="sold-veil">
-            <span className="sold-mark">售罄</span>
-          </span>
-        ) : null}
+        <span className="caption">
+          <span className="name">{item.product_name}</span>
+          {sub ? <span className="sub">{sub}</span> : null}
+        </span>
       </button>
       <div className="menu-card-action">
         <span className="price">{formatMoney(item.price_minor, item.currency)}</span>
@@ -77,7 +89,7 @@ export default function MenuCard({
             onClick={onAdd}
             aria-label={`加入购物车：${item.product_name}`}
           >
-            + 加入
+            +
           </button>
         )}
       </div>
