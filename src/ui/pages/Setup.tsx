@@ -9,6 +9,7 @@ import {
 import { errorMessage, openDatabase, resetDatabaseBinding, useApp } from '../../store';
 import { ErrorBox, Spinner } from '../components';
 import { formatBytes } from '../../domain/image';
+import { importFileAccept, importFileHint } from '../file-accept';
 
 export default function SetupPage({
   firstLaunch,
@@ -86,12 +87,14 @@ export default function SetupPage({
           <label className="field">
             <span>选择 SQLite 文件（.sqlite3 / .db）</span>
             {/*
-              故意不写 accept：iOS Safari 按系统 UTI 过滤，.sqlite3/.db 和
-              application/x-sqlite3 都没有对应 UTI，文件会被整个置灰选不中。
-              文件是否合法由内容判定（读文件头 + application_id），不靠扩展名。
+              accept 按平台给：
+              Android 上裸 input 会退化成媒体选择器（只有拍照/相册，没有「文件」入口），
+              必须给通配 accept 才选得到 .sqlite3；iOS 反之，写具体类型会把文件整个置灰。
+              详见 src/ui/file-accept.ts
             */}
             <input
               type="file"
+              accept={importFileAccept(navigator.userAgent)}
               disabled={busy}
               onChange={(e) => {
                 const f = e.target.files?.[0];
@@ -102,7 +105,7 @@ export default function SetupPage({
             />
           </label>
           <p className="tiny muted" style={{ marginTop: -4 }}>
-            如果列表里选不中，检查「文件」App 里文件有没有下载到本机（iCloud 未下载的条目也会是灰色）。
+            {importFileHint(navigator.userAgent)}
           </p>
 
           {busy ? <Spinner label="正在校验文件…" /> : null}
