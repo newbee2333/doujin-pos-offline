@@ -272,9 +272,6 @@ function Sidebar() {
       </NavLink>
       <NavLink to="/preview" className={({ isActive }) => (isActive ? 'active' : '')}>
         菜单预览
-        <span className="tiny muted" style={{ display: 'block', fontWeight: 400 }}>
-          不锁后台，可换尺寸
-        </span>
       </NavLink>
       <div className="sep" />
       <NavLink to="/staff/checkout" className={({ isActive }) => (isActive ? 'active' : '')}>
