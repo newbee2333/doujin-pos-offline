@@ -35,14 +35,17 @@ const cols = (sel) =>
 async function gotoStaff(path) {
   await page.goto(BASE + path, { waitUntil: 'networkidle' });
   await page.waitForTimeout(700);
-  const needs =
-    (await page.getByText('设置后台 PIN').count()) || (await page.getByText('请输入后台 PIN').count());
-  if (needs) {
+  // 2026-09-16 起首次要「设 PIN → 再确认一遍」，所以循环到键盘消失为止。
+  // 旧写法只输一遍就点确认，于是后面所有页面都停在 PIN 页上 ——
+  // 表现为「找不到『新建展会』」，看起来像产品坏了，其实是脚本没跟上改版。
+  for (let i = 0; i < 4; i++) {
+    const pad = page.locator('.pin-keys .pin-digit');
+    if (!(await pad.count())) break;
     for (const d of ['1', '2', '3', '4']) {
-      await page.locator('button', { hasText: new RegExp(`^${d}$`) }).first().click();
+      await page.click(`.pin-keys .pin-digit:text-is("${d}")`);
     }
-    await page.getByRole('button', { name: '确认' }).first().click();
-    await page.waitForTimeout(700);
+    await page.click('.pin-actions button.primary').catch(() => {});
+    await page.waitForTimeout(800);
   }
 }
 
@@ -68,7 +71,8 @@ try {
     await gotoStaff('staff/products');
     await page.getByRole('button', { name: '新增商品' }).click();
     await page.locator('.modal input').first().fill(n);
-    await page.locator('.modal input').nth(1).fill('20.00');
+    // 默认价格有自己的 placeholder；按序号取会取到「简称」
+    await page.locator('.modal input[placeholder="0.00"]').first().fill('20.00');
     await page.locator('.modal').getByRole('button', { name: '创建' }).click();
     await page.waitForTimeout(500);
   }
@@ -88,9 +92,11 @@ try {
   ok('准备 8 个商品（不依赖开场，菜单草稿也能渲染）');
 
   // ── A1. 真机游客菜单：列数应随视口（=容器）宽变化
+  // 2026-09-17：列数改成「横屏 6 / 竖屏 4」，阈值 760 与 980。
   const widths = [
-    { w: 1180, expect: 4, label: 'iPad 横屏' },
-    { w: 820, expect: 3, label: 'iPad 竖屏' },
+    { w: 1180, expect: 6, label: 'iPad 横屏' },
+    { w: 1024, expect: 6, label: 'iPad 小横屏' },
+    { w: 820, expect: 4, label: 'iPad 竖屏' },
     { w: 390, expect: 2, label: '手机' }
   ];
   for (const { w, expect, label } of widths) {
@@ -121,14 +127,27 @@ try {
       return { bottom: Math.round(r.bottom), viewportH: window.innerHeight, scrollY: Math.round(window.scrollY) };
     });
     const pinned = Math.abs(barAfter.bottom - barAfter.viewportH) <= 2;
-    if (pinned) {
-      ok('滚动后购物车条仍吸附视口底部', `bottom=${barAfter.bottom} 视口高=${barAfter.viewportH} 已滚 ${barAfter.scrollY}px`);
+    // 2026-09 的改版把购物车条改成「离底 var(--sp-3)=12px」的悬浮条
+    // （见 styles.css 的 .cart-bar 与 --cart-bar-h 注释），
+    // 所以这里不该再断言「紧贴视口底边」，而要断言「离底距离 = CSS 声明的值，且滚动后不变」。
+    const gap = barAfter.viewportH - barAfter.bottom;
+    const declared = await page.evaluate(() =>
+      parseFloat(getComputedStyle(document.querySelector('.cart-bar')).bottom)
+    );
+    const offsetOk = Math.abs(gap - declared) <= 2;
+    if (pinned || offsetOk) {
+      ok(
+        '滚动后购物车条仍吸在视口底部',
+        `离底 ${gap}px（CSS 声明 ${declared}px）· 视口高 ${barAfter.viewportH} · 已滚 ${barAfter.scrollY}px`
+      );
     } else {
-      fail('滚动后购物车条不再吸附', `bottom=${barAfter.bottom}，视口高=${barAfter.viewportH}（差 ${barAfter.viewportH - barAfter.bottom}px，已滚 ${barAfter.scrollY}px）`);
+      fail(
+        '滚动后购物车条不再吸附',
+        `离底 ${gap}px，CSS 声明 ${declared}px，视口高 ${barAfter.viewportH}（已滚 ${barAfter.scrollY}px）`
+      );
     }
-    if (barBefore.bottom === barAfter.bottom) {
-      // 只是提示，不判失败
-      steps.push(`NOTE 滚动前后 bottom 相同（${barBefore.bottom}）`);
+    if (Math.abs(barBefore.bottom - barAfter.bottom) > 2) {
+      fail('滚动前后购物车条位置变了', `滚前 ${barBefore.bottom} → 滚后 ${barAfter.bottom}`);
     }
   }
 
@@ -137,8 +156,8 @@ try {
   await gotoStaff('preview');
   await page.waitForTimeout(1200);
   const frameExpect = [
-    { idx: 0, w: 1180, expect: 4, label: '平板横屏画框' },
-    { idx: 1, w: 820, expect: 3, label: '平板竖屏画框' },
+    { idx: 0, w: 1180, expect: 6, label: '平板横屏画框' },
+    { idx: 1, w: 820, expect: 4, label: '平板竖屏画框' },
     { idx: 2, w: 390, expect: 2, label: '手机画框' }
   ];
   const count = await page.getByRole('button', { name: /预览菜单效果/ }).count();

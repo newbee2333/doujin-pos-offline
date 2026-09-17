@@ -43,7 +43,7 @@ export default function BackupNudge() {
 
   return (
     <div
-      className="notice"
+      className="notice backup-nudge"
       style={{
         display: 'flex',
         alignItems: 'center',

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   activateEvent,
@@ -15,13 +15,15 @@ import {
   listEvents,
   listPaymentMethods,
   reopenEvent,
+  removeVariantsFromEvent,
   setEventPaymentMethods,
   setVariantsEnabled,
   updateConfig,
   updateEvent,
   updatePaymentMethod
 } from '../../services/events';
-import { createAsset, createProduct, listCategories, listProducts } from '../../services/catalog';
+import { createAsset, listCategories, listProducts } from '../../services/catalog';
+import { getVariantSales } from '../../services/reports';
 import { initializeStock } from '../../services/inventory';
 import { hashBytes, preparePaymentQr } from '../../domain/image';
 import { setCurrentEventId } from '../../services/system';
@@ -30,9 +32,11 @@ import { errorMessage, useApp } from '../../store';
 import AssetEditor from '../AssetEditor';
 import { validateEventDates } from '../../domain/event-dates';
 import { AdjustStockModal } from '../AdjustStockModal';
-import { ErrorBox, Field, Spinner, useAsync } from '../components';
+import { AssetImage, ErrorBox, Field, InfoDot, Spinner, useAsync } from '../components';
 import AddProductsModal from './AddProductsModal';
+import { ProductEditorModal } from '../ProductEditor';
 import type { Currency } from '../../domain/types';
+import type { ProductWithVariants } from '../../services/catalog';
 
 export default function StaffEventsPage() {
   const showToast = useApp((s) => s.showToast);
@@ -44,7 +48,7 @@ export default function StaffEventsPage() {
   const currentId = currentEventId ?? events.data?.[0]?.id ?? null;
 
   return (
-    <div className="content">
+    <div className="page">
       <div className="row">
         <h1 style={{ margin: 0 }}>展会配置</h1>
         <span className="spacer" />
@@ -197,6 +201,8 @@ function EventDetail({
   const eventMethods = useAsync(() => getEventPaymentMethods(eventId), [eventId]);
   const products = useAsync(() => listProducts({ archived: false }), []);
   const cats = useAsync(() => listCategories(true), []);
+  // 本场已售。跟着 configs 一起重取：下架/上架不改销量，但库存调整和成交会改。
+  const sales = useAsync(() => getVariantSales(eventId), [eventId, configs.data]);
   const [ready, setReady] = useState<string[] | null>(null);
   const [stockTarget, setStockTarget] = useState<{ variantId: string; name: string } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -207,9 +213,35 @@ function EventDetail({
   const [methodOn, setMethodOn] = useState<Record<string, boolean>>({});
   const [templateOn, setTemplateOn] = useState<Record<string, boolean>>({});
   const [pinFor, setPinFor] = useState<Record<string, boolean>>({});
+  // 表格里的三个开关（游客可见 / 精确库存 / 上架）也用乐观状态，理由和支付方式那两个一样：
+  // 写入是异步的，直接写 checked={c.xxx === 1} 会让方框在写入完成前弹回旧值。
+  // ⚠️ 批量操作动了哪个键，就必须把那个键的乐观值清掉 ——
+  // 否则用户点完「批量下架」，屏幕会拿着旧乐观值把刚写进库的结果又盖回去。
+  const [visibleOn, setVisibleOn] = useState<Record<string, boolean>>({});
+  const [exactOn, setExactOn] = useState<Record<string, boolean>>({});
+  const [enabledOn, setEnabledOn] = useState<Record<string, boolean>>({});
   const [showAdd, setShowAdd] = useState(false);
+  // 参展商品表里的「编辑」直接用「商品」页那套完整编辑器；
+  // 新建也走同一个弹窗（不再有展会页专属的精简表单）
+  const [editingProduct, setEditingProduct] = useState<ProductWithVariants | null>(null);
+  const [creatingProduct, setCreatingProduct] = useState(false);
 
-  if (event.loading || configs.loading) {
+  // 参展商品表的行来自 event_variant_configs，那里只有 product_id，
+  // 没有封面和分类。回商品列表建一次索引，别每一行 find 三遍。
+  const productById = useMemo(
+    () => new Map((products.data ?? []).map((p) => [p.id, p])),
+    [products.data]
+  );
+  const soldById = useMemo(
+    () => new Map((sales.data ?? []).map((r) => [r.variant_id, Number(r.sold_units)])),
+    [sales.data]
+  );
+
+  // 只在「第一次还没有数据」时占屏。
+  // 原来是 `event.loading || configs.loading`，而 useAsync 每次 reload 都会把 loading 置 true ——
+  // 于是每改一个开关（上架 / 游客可见 / 限购）整张表都会先被 Spinner 顶掉再重建。
+  // 在 iPad 上表现为「点一下，表格闪一下」，同时把正在编辑的输入框和焦点一起丢掉。
+  if ((event.loading && !event.data) || (configs.loading && !configs.data)) {
     return (
       <div className="center-page">
         <Spinner label="读取展会配置…" />
@@ -219,15 +251,85 @@ function EventDetail({
   const ev = event.data;
   if (!ev) return <ErrorBox message="展会不存在" />;
   const currency = ev.currency;
+  const cfgRows = configs.data ?? [];
 
-  const enabledIds = (configs.data ?? []).filter((c) => c.enabled === 1).map((c) => c.variant_id);
+  const enabledIds = cfgRows.filter((c) => c.enabled === 1).map((c) => c.variant_id);
   const notAdded = (products.data ?? []).flatMap((p) =>
-    p.variants.filter((v) => !enabledIds.includes(v.id) && (!categoryFilter || p.category_id === categoryFilter))
-      .map((v) => ({ ...v, pname: p.name, ptype: p.type }))
+    p.variants
+      .filter((v) => !enabledIds.includes(v.id) && (!categoryFilter || p.category_id === categoryFilter))
+      .map((v) => ({
+        ...v,
+        pname: p.name,
+        ptype: p.type,
+        cover: p.cover_asset_id,
+        category: p.category_name
+      }))
   );
 
   async function refreshReady() {
     setReady(await checkEventReady(eventId));
+  }
+
+  /**
+   * 批量改上架状态。
+   *
+   * 原来这里两件事都缺：
+   *  1. 没有 try/catch —— 写失败会变成一条 unhandled rejection，屏幕上什么都不发生；
+   *  2. 没有清乐观值 —— 而「全选」那个表头复选框是**非受控**的，
+   *     只要用户中途取消过某一行，它就仍然显示已勾选，于是「批量下架」静默地只作用于一部分行。
+   *     用户看到的是「批量下架只下架了几个」，从界面上完全看不出为什么。
+   */
+  async function bulkEnabled(ids: string[], enabled: boolean, label: string) {
+    if (!ids.length) {
+      showToast('先勾选要操作的规格');
+      return;
+    }
+    try {
+      await setVariantsEnabled(eventId, ids, enabled);
+      setEnabledOn({});
+      configs.reload();
+      showToast(`${label}：${ids.length} 个规格已${enabled ? '上架' : '下架'}`);
+    } catch (e) {
+      showToast(errorMessage(e));
+    }
+  }
+
+  /**
+   * 从本场移除（不是下架）。
+   *
+   * 之前只有上下架 —— 不在本场卖的商品会一直留在表里占一行，
+   * 想清干净只能靠「删除展会」或者改库。移除是整行去掉。
+   * 已经卖出去的件数要提前说出来：报表与库存流水都不受影响，免得摊主以为会丢账。
+   */
+  async function removeFromEvent(ids: string[]) {
+    if (!ids.length) {
+      showToast('先勾选要移除的规格');
+      return;
+    }
+    const sold = ids.reduce((a, id) => a + (soldById.get(id) ?? 0), 0);
+    const what = ids.length === 1 ? `「${cfgRows.find((c) => c.variant_id === ids[0])?.product_name ?? '这件'}」` : `选中的 ${ids.length} 个规格`;
+    const soldNote = sold > 0 ? `\n本场已售 ${sold} 件：报表与库存流水都会保留，不会丢账。` : '';
+    if (
+      !window.confirm(
+        `把${what}从本场移除？\n本场价格、库存开关、上下架状态会一起删掉。\n` +
+          `（只是不在本场卖了，商品本身不受影响；库存流水保留，以后再加回来还在。）${soldNote}`
+      )
+    ) {
+      return;
+    }
+    try {
+      await removeVariantsFromEvent(eventId, ids);
+      setSelected((prev) => {
+        const next = new Set(prev);
+        ids.forEach((id) => next.delete(id));
+        return next;
+      });
+      setEnabledOn({});
+      configs.reload();
+      showToast(`已从本场移除 ${ids.length} 个规格`);
+    } catch (e) {
+      showToast(errorMessage(e));
+    }
   }
 
   async function run(fn: () => Promise<void>, ok: string) {
@@ -387,12 +489,16 @@ function EventDetail({
           </select>
           <button
             onClick={async () => {
-              await addVariantsToEvent(
-                eventId,
-                notAdded.map((v) => v.id)
-              );
-              configs.reload();
-              showToast(`已加入 ${notAdded.length} 个规格`);
+              try {
+                await addVariantsToEvent(
+                  eventId,
+                  notAdded.map((v) => v.id)
+                );
+                configs.reload();
+                showToast(`已加入 ${notAdded.length} 个规格`);
+              } catch (e) {
+                showToast(errorMessage(e));
+              }
             }}
             disabled={!notAdded.length}
             title={notAdded.length ? undefined : '没有未加入本场的规格'}
@@ -401,18 +507,32 @@ function EventDetail({
           </button>
           {categoryFilter ? (
             <>
+              {/* 整类上下架也走同一个「清乐观值 + 提示」的路径，
+                  否则整类的行内方框会停在旧值上，看起来和批量按钮一样「没反应」。 */}
               <button
                 onClick={async () => {
-                  await bulkSetCategoryEnabled(eventId, categoryFilter, true);
-                  configs.reload();
+                  try {
+                    await bulkSetCategoryEnabled(eventId, categoryFilter, true);
+                    setEnabledOn({});
+                    configs.reload();
+                    showToast('本分类已上架');
+                  } catch (e) {
+                    showToast(errorMessage(e));
+                  }
                 }}
               >
                 本分类上架
               </button>
               <button
                 onClick={async () => {
-                  await bulkSetCategoryEnabled(eventId, categoryFilter, false);
-                  configs.reload();
+                  try {
+                    await bulkSetCategoryEnabled(eventId, categoryFilter, false);
+                    setEnabledOn({});
+                    configs.reload();
+                    showToast('本分类已下架');
+                  } catch (e) {
+                    showToast(errorMessage(e));
+                  }
                 }}
               >
                 本分类下架
@@ -426,27 +546,42 @@ function EventDetail({
             <thead>
               <tr>
                 <th>
+                  {/* 受控 + 三态。
+                      原来这个框是非受控的：用户取消掉某一行之后，它仍然显示「已勾选」，
+                      于是「批量下架」只作用于剩下的那几行 —— 屏幕上看起来就是
+                      「批量下架只下架了一部分」，而且没有任何提示说明为什么。
+                      indeterminate 只能走 DOM（React 没有这个 prop），所以放在 ref 里设。 */}
                   <input
                     type="checkbox"
+                    aria-label="全选参展商品"
+                    checked={selected.size > 0 && selected.size === cfgRows.length}
+                    ref={(el) => {
+                      if (el) el.indeterminate = selected.size > 0 && selected.size < cfgRows.length;
+                    }}
                     onChange={(e) => {
-                      setSelected(e.target.checked ? new Set((configs.data ?? []).map((c) => c.variant_id)) : new Set());
+                      setSelected(e.target.checked ? new Set(cfgRows.map((c) => c.variant_id)) : new Set());
                     }}
                   />
                 </th>
                 <th>商品</th>
                 <th>本场价格</th>
-                <th className="num">初始库存</th>
-                <th className="num">可用</th>
+                <th className="num">
+                  库存 · 已售
+                  <InfoDot text="「剩」= 实际库存 − 已预留（待付款占用的那部分），也就是现在还能卖多少；「已售」= 本场已成交订单的件数，口径与报表页的商品排行一致；「备」= 开场时录入的初始库存，之后不会再变（补货、盘点、报损都只改实际库存）。" />
+                </th>
                 <th>限购</th>
                 <th>游客可见</th>
-                <th>精确库存</th>
+                <th>
+                  精确库存
+                  <InfoDot text="勾选后，这一项在游客菜单里直接显示「剩 N」。不勾则只在少量或售罄时提示（有货 / 少量 / 售罄）。" />
+                </th>
                 <th>上架</th>
               </tr>
             </thead>
             <tbody>
-              {!(configs.data && configs.data.length) ? (
+              {!cfgRows.length ? (
                 <tr>
-                  <td colSpan={9} className="center" style={{ padding: '36px 12px' }}>
+                  <td colSpan={8} className="center" style={{ padding: '36px 12px' }}>
                     <div className="muted">
                       还没有参展商品。点击右上角「+ 添加商品」，可以现场新建也可以从已有商品加入。
                     </div>
@@ -470,11 +605,12 @@ function EventDetail({
                   </td>
                 </tr>
               ) : null}
-              {configs.data?.map((c) => (
+              {cfgRows.map((c) => (
                 <tr key={c.variant_id}>
                   <td>
                     <input
                       type="checkbox"
+                      aria-label={`选择 ${c.product_name}`}
                       checked={selected.has(c.variant_id)}
                       onChange={(e) => {
                         const s = new Set(selected);
@@ -485,11 +621,55 @@ function EventDetail({
                     />
                   </td>
                   <td>
-                    {c.product_name}
-                    <div className="tiny muted">
-                      {c.variant_name}
-                      {c.sku ? ` · ${c.sku}` : ''} · {c.product_type}
-                    </div>
+                    <span className="cell-product">
+                      <AssetImage
+                        assetId={productById.get(c.product_id)?.cover_asset_id ?? null}
+                        alt={c.product_name}
+                        className="row-thumb"
+                      />
+                      <span className="cell-body">
+                        <span className="row tight" style={{ gap: 6, alignItems: 'baseline' }}>
+                          {/* .cell-name 是给验收脚本用的稳定抓手：
+                              这一格里还有「编辑」按钮和收银缩略图，靠 innerText 取商品名
+                              会连按钮文字一起带上。 */}
+                          <span className="cell-name">{c.product_name}</span>
+                          {/* 参展商品也要能改商品属性，否则在展会现场发现名字写错、
+                              没配封面，就得切到「商品」页再翻回来找这一件 */}
+                          <button
+                            className="small ghost"
+                            title="编辑这件商品的名称、封面、说明等属性"
+                            onClick={() => {
+                              const p = productById.get(c.product_id);
+                              if (p) setEditingProduct(p);
+                              else showToast('商品已被归档或删除，请到「商品」页处理');
+                            }}
+                          >
+                            编辑
+                          </button>
+                          {/* 移除 = 整行从本场去掉，不是下架。
+                              原来只有上下架，不在本场卖的商品会永远占着一行。 */}
+                          <button
+                            className="small ghost"
+                            title="从本场移除（≠ 下架：整行去掉，本场价格与库存开关一起删）"
+                            onClick={() => void removeFromEvent([c.variant_id])}
+                          >
+                            移除
+                          </button>
+                        </span>
+                        {/* 副标题原来第三段是商品类型（normal / bundle…）。
+                            类型在英文标识符里看不出意义，中文那版（「普通库存」）又和
+                            「初始库存」列的语境打架——换成分类，才知道这件摆在哪一区。 */}
+                        <div className="tiny muted">
+                          {[
+                            c.variant_name,
+                            productById.get(c.product_id)?.category_name ?? '未分类',
+                            c.sku
+                          ]
+                            .filter(Boolean)
+                            .join(' · ')}
+                        </div>
+                      </span>
+                    </span>
                   </td>
                   <td>
                     {c.product_type === 'gift' ? (
@@ -518,12 +698,14 @@ function EventDetail({
                   </td>
                   <td className="num">
                     {c.product_type === 'non_stock' || c.product_type === 'bundle' ? (
-                      '—'
+                      // 不计库存/套装本来就没有库存，但「卖了多少」照样要看
+                      <span className="tiny muted">已售 {soldById.get(c.variant_id) ?? 0}</span>
                     ) : c.initial_stock === null ? (
                       <input
                         type="number"
                         min={0}
                         placeholder="0"
+                        aria-label={`${c.product_name} 初始库存`}
                         style={{ maxWidth: 90 }}
                         onBlur={async (e) => {
                           const v = Number(e.target.value || 0);
@@ -536,21 +718,31 @@ function EventDetail({
                         }}
                       />
                     ) : (
-                      // 已设过库存：数字本身不可改，改动必须走「调整」——要选原因并记入流水
-                      <span className="row tight" style={{ justifyContent: 'flex-end', gap: 6 }}>
-                        <span>{c.initial_stock}</span>
-                        <button
-                          className="small ghost"
-                          title="调整库存（需选择原因，会记入流水）"
-                          onClick={() => setStockTarget({ variantId: c.variant_id, name: c.product_name })}
-                        >
-                          调整
-                        </button>
+                      // 已设过库存：数字本身不可改，改动必须走「调整」——要选原因并记入流水。
+                      //
+                      // 原来这里是两列：「初始库存」和「可用」。开场之后初始库存就是一个
+                      // 永远不动的数字，真正要看的「卖了多少」反而没有 —— 得翻到报表页。
+                      // 现在并成一格：第一行是「剩多少 · 卖了多少」，第二行才是「带了备货多少」
+                      // 和调整入口。列数没变，但营业中一眼能拿到的信息多了一条。
+                      <span className="stock-cell">
+                        <span className="row tight" style={{ justifyContent: 'flex-end', gap: 8 }}>
+                          <span className="strong">
+                            剩 {c.physical_stock === null ? '—' : c.physical_stock - (c.reserved_stock ?? 0)}
+                          </span>
+                          <span className="tiny muted">已售 {soldById.get(c.variant_id) ?? 0}</span>
+                        </span>
+                        <span className="row tight" style={{ justifyContent: 'flex-end', gap: 6 }}>
+                          <span className="tiny muted">备 {c.initial_stock}</span>
+                          <button
+                            className="small ghost"
+                            title="调整库存（需选择原因，会记入流水）"
+                            onClick={() => setStockTarget({ variantId: c.variant_id, name: c.product_name })}
+                          >
+                            调整
+                          </button>
+                        </span>
                       </span>
                     )}
-                  </td>
-                  <td className="num">
-                    {c.physical_stock === null ? '—' : c.physical_stock - (c.reserved_stock ?? 0)}
                   </td>
                   <td>
                     <input
@@ -558,41 +750,73 @@ function EventDetail({
                       min={1}
                       defaultValue={c.purchase_limit ?? ''}
                       placeholder="不限"
+                      aria-label={`${c.product_name} 限购`}
                       style={{ maxWidth: 80 }}
-                      onBlur={(e) =>
-                        void updateConfig(eventId, c.variant_id, {
-                          purchase_limit: e.target.value ? Number(e.target.value) : null
-                        })
-                      }
+                      onBlur={async (e) => {
+                        try {
+                          await updateConfig(eventId, c.variant_id, {
+                            purchase_limit: e.target.value ? Number(e.target.value) : null
+                          });
+                        } catch (err) {
+                          showToast(errorMessage(err));
+                        }
+                      }}
+                    />
+                  </td>
+                  <td>
+                    {/* 受控 + 乐观值。写库是异步的，直接绑 checked={c.kiosk_visible === 1}
+                        会让方框在写入期间弹回旧值 —— 这几个开关都不 reload，弹回后就再也不动了。 */}
+                    <input
+                      type="checkbox"
+                      aria-label={`${c.product_name} 游客可见`}
+                      checked={visibleOn[c.variant_id] ?? c.kiosk_visible === 1}
+                      onChange={async (e) => {
+                        const value = e.target.checked;
+                        setVisibleOn((s) => ({ ...s, [c.variant_id]: value }));
+                        try {
+                          await updateConfig(eventId, c.variant_id, { kiosk_visible: value ? 1 : 0 });
+                        } catch (err) {
+                          setVisibleOn((s) => ({ ...s, [c.variant_id]: !value }));
+                          showToast(errorMessage(err));
+                        }
+                      }}
                     />
                   </td>
                   <td>
                     <input
                       type="checkbox"
-                      defaultChecked={c.kiosk_visible === 1}
-                      onChange={(e) =>
-                        void updateConfig(eventId, c.variant_id, { kiosk_visible: e.target.checked ? 1 : 0 })
-                      }
+                      aria-label={`${c.product_name} 精确库存`}
+                      checked={exactOn[c.variant_id] ?? c.show_exact_stock === 1}
+                      onChange={async (e) => {
+                        const value = e.target.checked;
+                        setExactOn((s) => ({ ...s, [c.variant_id]: value }));
+                        try {
+                          await updateConfig(eventId, c.variant_id, { show_exact_stock: value ? 1 : 0 });
+                        } catch (err) {
+                          setExactOn((s) => ({ ...s, [c.variant_id]: !value }));
+                          showToast(errorMessage(err));
+                        }
+                      }}
                     />
                   </td>
                   <td>
+                    {/* 上架：受控 + 乐观值。原来是非受控的 defaultChecked，
+                        批量操作改了库之后行内方框不会跟着变（除非整表被重建）。 */}
                     <input
                       type="checkbox"
-                      defaultChecked={c.show_exact_stock === 1}
-                      onChange={(e) =>
-                        void updateConfig(eventId, c.variant_id, { show_exact_stock: e.target.checked ? 1 : 0 })
-                      }
-                    />
-                  </td>
-                  <td>
-                    <input
-                      type="checkbox"
-                      defaultChecked={c.enabled === 1}
-                      onChange={(e) =>
-                        void updateConfig(eventId, c.variant_id, { enabled: e.target.checked ? 1 : 0 }).then(() =>
-                          configs.reload()
-                        )
-                      }
+                      aria-label={`${c.product_name} 上架`}
+                      checked={enabledOn[c.variant_id] ?? c.enabled === 1}
+                      onChange={async (e) => {
+                        const value = e.target.checked;
+                        setEnabledOn((s) => ({ ...s, [c.variant_id]: value }));
+                        try {
+                          await updateConfig(eventId, c.variant_id, { enabled: value ? 1 : 0 });
+                          configs.reload();
+                        } catch (err) {
+                          setEnabledOn((s) => ({ ...s, [c.variant_id]: !value }));
+                          showToast(errorMessage(err));
+                        }
+                      }}
                     />
                   </td>
                 </tr>
@@ -616,21 +840,18 @@ function EventDetail({
 
         {selected.size ? (
           <div className="row" style={{ marginTop: 8 }}>
-            <button
-              onClick={async () => {
-                await setVariantsEnabled(eventId, Array.from(selected), true);
-                configs.reload();
-              }}
-            >
+            <span className="small muted">已选 {selected.size} / {cfgRows.length}</span>
+            <button onClick={() => void bulkEnabled(Array.from(selected), true, '批量上架')}>
               批量上架
             </button>
-            <button
-              onClick={async () => {
-                await setVariantsEnabled(eventId, Array.from(selected), false);
-                configs.reload();
-              }}
-            >
+            <button onClick={() => void bulkEnabled(Array.from(selected), false, '批量下架')}>
               批量下架
+            </button>
+            <button onClick={() => void removeFromEvent(Array.from(selected))} title="整行从本场去掉，不是下架">
+              批量移除本场
+            </button>
+            <button className="ghost" onClick={() => setSelected(new Set())} title="取消选择，但不改任何商品">
+              取消选择
             </button>
           </div>
         ) : null}
@@ -744,14 +965,53 @@ function EventDetail({
       {showAdd ? (
         <AddProductsModal
           eventId={eventId}
-          currency={currency}
           notAdded={notAdded}
-          categories={cats.data ?? []}
           onClose={() => setShowAdd(false)}
+          onCreateNew={() => {
+            setShowAdd(false);
+            setCreatingProduct(true);
+          }}
           onAdded={() => {
             configs.reload();
             products.reload();
             setShowAdd(false);
+          }}
+        />
+      ) : null}
+
+      {creatingProduct ? (
+        <ProductEditorModal
+          mode="create"
+          categories={cats.data ?? []}
+          defaultCurrency={currency}
+          onClose={() => setCreatingProduct(false)}
+          onSaved={async ({ variantId }) => {
+            setCreatingProduct(false);
+            // 新建完顺手加进本场——「添加商品到本场」里点的新建，目的就是加进来
+            if (variantId) {
+              try {
+                await addVariantsToEvent(eventId, [variantId]);
+                showToast('已创建并加入本场');
+              } catch (e) {
+                showToast(errorMessage(e));
+              }
+            }
+            configs.reload();
+            products.reload();
+          }}
+        />
+      ) : null}
+
+      {editingProduct ? (
+        <ProductEditorModal
+          mode="edit"
+          product={editingProduct}
+          categories={cats.data ?? []}
+          onClose={() => setEditingProduct(null)}
+          onSaved={() => {
+            setEditingProduct(null);
+            configs.reload();
+            products.reload();
           }}
         />
       ) : null}

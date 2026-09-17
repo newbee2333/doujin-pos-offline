@@ -28,17 +28,16 @@ const ready = () =>
 async function gotoStaff(path) {
   await page.goto(BASE + path, { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(1200);
-  const digit = page.locator('button', { hasText: /^1$/ }).first();
-  try {
-    await digit.waitFor({ state: 'visible', timeout: 12000 });
-  } catch {
-    return;
+  // 2026-09-16 起首次要「设 PIN → 再确认一遍」，所以循环到键盘消失为止。
+  // 旧写法用 button 文本找数字键、只输一遍，于是后面所有页面都停在 PIN 页上。
+  for (let i = 0; i < 4; i++) {
+    if (!(await page.locator('.pin-keys .pin-digit').count())) break;
+    for (const d of ['1', '2', '3', '4']) {
+      await page.click(`.pin-keys .pin-digit:text-is("${d}")`);
+    }
+    await page.click('.pin-actions button.primary').catch(() => {});
+    await page.waitForTimeout(900);
   }
-  for (const d of ['1', '2', '3', '4']) {
-    await page.locator('button', { hasText: new RegExp(`^${d}$`) }).first().click();
-  }
-  await page.getByRole('button', { name: '确认' }).first().click();
-  await page.waitForTimeout(1500);
 }
 
 try {
@@ -60,7 +59,8 @@ try {
   await gotoStaff('staff/products');
   await page.getByRole('button', { name: '新增商品' }).click();
   await page.locator('.modal input').first().fill('库存测试本');
-  await page.locator('.modal input').nth(1).fill('20.00');
+  // 默认价格有自己的 placeholder；按序号取会填到「简称」
+  await page.locator('.modal input[placeholder="0.00"]').first().fill('20.00');
   await page.locator('.modal').getByRole('button', { name: '创建' }).click();
   await page.waitForTimeout(900);
 
@@ -96,9 +96,60 @@ try {
     if (!(await modal.count())) {
       fail('打开库存调整弹窗', '弹窗没出现');
     } else {
+      // 快捷加减：每点一次应「累加」，不是「设为」（2026-09-17 用户要求）
+      const qty = modal.locator('input[type="number"]').first();
+      const quick = (label) => modal.getByRole('button', { name: label, exact: true });
+      // 实时预览里的「实际库存」是第一个 strong，快捷按钮不该动它
+      const stockNow = () => modal.evaluate((m) => m.querySelector('.notice strong')?.textContent?.trim() ?? '');
+      const stockAtStart = await stockNow();
+      await qty.fill('');
+      await quick('+5').click();
+      await quick('+5').click();
+      await quick('+5').click();
+      const triple = await qty.inputValue();
+      if (triple === '15') ok('快捷按钮累计：+5 连点三次 = 15');
+      else fail('快捷按钮累计', `期望 15，实际 ${triple}`);
+      await quick('-1').click();
+      const minus1 = await qty.inputValue();
+      if (minus1 === '14') ok('负数快捷：再点 −1 = 14');
+      else fail('负数快捷 −1', `期望 14，实际 ${minus1}`);
+      await quick('-10').click();
+      const minus10 = await qty.inputValue();
+      if (minus10 === '4') ok('负数快捷：再点 −10 = 4');
+      else fail('负数快捷 −10', `期望 4，实际 ${minus10}`);
+      // 顺序：左边减少、右边增加（2026-09-17 用户要求）
+      const order = await modal.evaluate((m) =>
+        [...m.querySelectorAll('button')].map((b) => b.textContent.trim())
+      );
+      const iM10 = order.indexOf('-10');
+      const iP10 = order.indexOf('+10');
+      const iClear = order.indexOf('清空数量');
+      if (iM10 >= 0 && iP10 > iM10) ok('快捷按钮左减右增', `-10 在 #${iM10}，+10 在 #${iP10}`);
+      else fail('快捷按钮左减右增', JSON.stringify(order));
+      if (iClear > iP10) ok('「清空数量」排在最右');
+      else fail('「清空数量」位置', `index ${iClear}`);
+      for (const s of ['+10', '-5', '-10', '+1']) {
+        const has = await quick(s).count();
+        if (has) ok(`快捷按钮存在 ${s}`);
+        else fail(`快捷按钮缺失 ${s}`, '应该是 −10/−5/−1/+1/+5/+10 六个');
+      }
+      // 「清空数量」只清输入框，不动实际库存（原来是「把实际库存盘点成 0」）
+      await quick('+5').click();
+      await quick('+5').click();
+      await quick('清空数量').click();
+      const cleared = await qty.inputValue();
+      const stockAfterClear = await stockNow();
+      if (cleared === '' || cleared === '0') ok('「清空数量」把输入的数字清掉', `输入框 = "${cleared}"`);
+      else fail('「清空数量」', `期望空或 0，实际 "${cleared}"`);
+      if (stockAfterClear === stockAtStart) ok('「清空数量」不动实际库存', `实际库存仍是 ${stockAfterClear}`);
+      else fail('「清空数量」误改了实际库存', `${stockAtStart} → ${stockAfterClear}`);
+      await qty.fill('15');
+      await modal.screenshot({ path: 'scripts/ui10/adjust-stock.png' });
+      ok('已截图 scripts/ui10/adjust-stock.png');
+      await qty.fill('5');
+
       // 选类型「补货」+ 数量 +5 + 备注
       await modal.getByRole('button', { name: '补货' }).first().click();
-      await modal.locator('input[type="number"]').first().fill('5');
       // 备注框没有 type 属性（[type="text"] 匹配不到），按 placeholder 定位
       await modal.locator('input[placeholder^="例如：补货"]').fill('自动化测试补货');
       await page.waitForTimeout(400);

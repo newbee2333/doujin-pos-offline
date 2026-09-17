@@ -19,7 +19,7 @@ import {
   useApp
 } from './store';
 import { getCurrentEventId, isPinSet, setPin, verifyPin } from './services/system';
-import { ErrorBox, PinPad, Spinner } from './ui/components';
+import { ErrorBox, PinPad, SetPinFlow, Spinner } from './ui/components';
 import BackupNudge from './ui/BackupNudge';
 import SetupPage from './ui/pages/Setup';
 import HomePage from './ui/pages/Home';
@@ -104,6 +104,32 @@ function BlockedScreen() {
   );
 }
 
+/** 摊主在「持久化未获批」的确认框里点了取消。
+ *
+ *  这一屏刻意不复用 BlockedScreen：那边的每一行都在说「你的环境不行」，
+ *  而这里环境完全正常，只是刚才那个选择需要重新做一次。把两者混用会让
+ *  摊主去查一个根本不存在的浏览器问题。 */
+function DeclinedLimitedScreen() {
+  const bootstrap = useBootstrap();
+  return (
+    <div className="center-page">
+      <div className="card">
+        <h2>未进入营业模式</h2>
+        <p className="small muted">
+          浏览器没有授予持久化存储权限，而你没有选择受限营业，所以没有打开数据库。
+          这不影响换台设备或换种方式继续——你的数据没有被改动。
+        </p>
+        <p className="small muted">
+          受限营业只是意味着数据有被系统回收的可能，需要更勤地导出备份。
+        </p>
+        <button className="primary" onClick={bootstrap}>
+          返回并重新选择
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function AnotherWindowScreen() {
   const bootstrap = useBootstrap();
   return (
@@ -130,7 +156,17 @@ function useBootstrap() {
     try {
       const capabilities = await checkCapabilities();
       setDiagnostics({ capabilities });
-      if (!capabilities.secureContext || !capabilities.webAssembly || !capabilities.opfs || !capabilities.sharedArrayBuffer) {
+      // 判据要和 BlockedScreen 里列的那几行对齐：那边显示了「跨源隔离」和
+      // 「Service Worker」，这里就必须真的检查它们，否则卡片会出现
+      // 「全部通过」却仍然拒绝启动的自相矛盾画面。
+      // OPFS 只有在跨源隔离成立时才谈得上（opfs-sahpool 依赖 SharedArrayBuffer）。
+      if (
+        !capabilities.secureContext ||
+        !capabilities.webAssembly ||
+        !capabilities.crossOriginIsolated ||
+        !capabilities.sharedArrayBuffer ||
+        !capabilities.opfs
+      ) {
         setStage('blocked');
         return;
       }
@@ -148,7 +184,11 @@ function useBootstrap() {
           '浏览器未授予持久化存储权限。继续营业存在数据被系统回收的风险，需要频繁导出备份。\n\n选择「确定」进入受限营业模式，选择「取消」退出。'
         );
         if (!confirmed) {
-          setStage('blocked');
+          // 这里以前是 setStage('blocked')，会把它和「环境不支持」混为一谈：
+          // 摊主明明看到能力检测全绿，却被告知「当前环境不能营业 / 请检查 COOP 头」，
+          // 与真实原因（自己刚点了取消）毫无关系。改成独立的一屏，说清发生了什么、
+          // 以及怎么回到营业状态。
+          setStage('declined-limited');
           return;
         }
         useApp.getState().setLimitedMode(true);
@@ -164,13 +204,16 @@ function useBootstrap() {
   }, [setCurrentEvent, setDbStatus, setDiagnostics, setStage]);
 }
 
-/** 后台路由保护：未解锁时只显示 PIN 界面，不渲染后台内容。 */
+/** 后台路由保护：未解锁时只显示 PIN 界面，不渲染后台内容。
+ *
+ *  这一页刻意只做一件事——输 PIN。
+ *  它有且只有一条出路：输对 PIN。
+ */
 function StaffGuard({ children }: { children: React.ReactNode }) {
   const unlocked = useApp((s) => s.staffUnlocked);
   const unlockStaff = useApp((s) => s.unlockStaff);
   const [error, setError] = useState<string | null>(null);
   const [needSetup, setNeedSetup] = useState<boolean | null>(null);
-  const [newPin, setNewPin] = useState('');
 
   useEffect(() => {
     isPinSet().then((v) => setNeedSetup(!v));
@@ -193,9 +236,11 @@ function StaffGuard({ children }: { children: React.ReactNode }) {
           <p className="small muted">
             PIN 用于防止游客误触后台，不是强安全认证。请勿在 URL 中传递，也不要用生日等易猜数字。
           </p>
-          <PinPad
-            hint="输入 4 到 8 位数字"
-            error={error}
+          <ErrorBox message={error} />
+          {/* 首次设置也走「输两遍」。按错一位当场就能发现，
+              比事后靠恢复流程找回来便宜得多。 */}
+          <SetPinFlow
+            firstHint="输入 4 到 8 位数字"
             onSubmit={async (pin) => {
               try {
                 await setPin(pin);
@@ -228,24 +273,6 @@ function StaffGuard({ children }: { children: React.ReactNode }) {
             }
           }}
         />
-        <div className="row" style={{ marginTop: 12 }}>
-          <input
-            className="small"
-            placeholder="改 PIN（可选）"
-            value={newPin}
-            onChange={(e) => setNewPin(e.target.value)}
-            style={{ maxWidth: 160 }}
-          />
-          <button
-            className="small"
-            onClick={() => {
-              setNewPin('');
-              setNeedSetup(true);
-            }}
-          >
-            重新设置
-          </button>
-        </div>
       </div>
     </div>
   );
@@ -258,62 +285,82 @@ function Sidebar() {
   return (
     <nav className="sidebar">
       <div className="brand">Doujin POS</div>
-      <NavLink to="/" className={({ isActive }) => (isActive ? 'active' : '')} end>
-        展会主页
-      </NavLink>
-      <NavLink
-        to="/kiosk"
-        className={({ isActive }) => (isActive ? 'active' : '')}
-        onClick={(e) => {
-          if (!askBeforeKiosk()) e.preventDefault();
-        }}
-      >
-        游客菜单
-      </NavLink>
-      <NavLink to="/preview" className={({ isActive }) => (isActive ? 'active' : '')}>
-        菜单预览
-      </NavLink>
-      <div className="sep" />
-      <NavLink to="/staff/checkout" className={({ isActive }) => (isActive ? 'active' : '')}>
-        摊主收银
-      </NavLink>
-      <NavLink to="/staff/pending" className={({ isActive }) => (isActive ? 'active' : '')}>
-        待付款
-      </NavLink>
-      <NavLink to="/staff/orders" className={({ isActive }) => (isActive ? 'active' : '')}>
-        订单
-      </NavLink>
-      <NavLink to="/staff/inventory" className={({ isActive }) => (isActive ? 'active' : '')}>
-        库存
-      </NavLink>
-      <div className="sep" />
-      <NavLink to="/staff/products" className={({ isActive }) => (isActive ? 'active' : '')}>
-        商品
-      </NavLink>
-      <NavLink to="/staff/events" className={({ isActive }) => (isActive ? 'active' : '')}>
-        展会配置
-      </NavLink>
-      <NavLink to="/staff/reports" className={({ isActive }) => (isActive ? 'active' : '')}>
-        报表收摊
-      </NavLink>
-      <NavLink to="/staff/backup" className={({ isActive }) => (isActive ? 'active' : '')}>
-        备份恢复
-      </NavLink>
-      <NavLink to="/settings" className={({ isActive }) => (isActive ? 'active' : '')}>
-        设置
-      </NavLink>
-      <NavLink to="/help" className={({ isActive }) => (isActive ? 'active' : '')}>
-        说明书
-        <span className="tiny muted" style={{ display: 'block', fontWeight: 400 }}>
-          摆摊前中后怎么做
-        </span>
-      </NavLink>
-      {limited ? <div className="side-note">受限营业模式：请频繁导出备份</div> : null}
-      {staffUnlocked ? (
-        <button className="small ghost" onClick={lockStaff}>
-          锁定后台
-        </button>
-      ) : null}
+
+      {/* 三段式：品牌固定 / 导航自己滚 / 底部固定。
+          矮屏（1024×768 的横屏 iPad）装不下 12 项导航，如果整条侧栏一起滚，
+          「锁定后台」会被推到折叠线以下；改成底部 sticky 又会盖住上面一项。
+          拆成独立滚动区之后，两边都不需要将就。 */}
+      <div className="sidebar-scroll">
+        <NavLink to="/" className={({ isActive }) => (isActive ? 'active' : '')} end>
+          展会主页
+        </NavLink>
+        <NavLink
+          to="/kiosk"
+          className={({ isActive }) => (isActive ? 'active' : '')}
+          onClick={(e) => {
+            if (!askBeforeKiosk()) e.preventDefault();
+          }}
+        >
+          游客菜单
+        </NavLink>
+        <NavLink to="/preview" className={({ isActive }) => (isActive ? 'active' : '')}>
+          菜单预览
+        </NavLink>
+
+        {/* 12 项平铺时，分组落点和摆摊节奏对不上：营业中要在「收银/待付款/订单/库存」
+            之间反复切，而「商品/展会配置」开摊前调一次就基本不动、却和它们挨在一起。
+            现在按 经营 → 配置 → 收摊 三组排，说明书这类参考资料降到侧栏底部。 */}
+        <div className="nav-group">
+          <div className="nav-label">经营</div>
+          <NavLink to="/staff/checkout" className={({ isActive }) => (isActive ? 'active' : '')}>
+            摊主收银
+          </NavLink>
+          <NavLink to="/staff/pending" className={({ isActive }) => (isActive ? 'active' : '')}>
+            待付款
+          </NavLink>
+          <NavLink to="/staff/orders" className={({ isActive }) => (isActive ? 'active' : '')}>
+            订单
+          </NavLink>
+          <NavLink to="/staff/inventory" className={({ isActive }) => (isActive ? 'active' : '')}>
+            库存
+          </NavLink>
+        </div>
+
+        <div className="nav-group">
+          <div className="nav-label">配置</div>
+          <NavLink to="/staff/products" className={({ isActive }) => (isActive ? 'active' : '')}>
+            商品
+          </NavLink>
+          <NavLink to="/staff/events" className={({ isActive }) => (isActive ? 'active' : '')}>
+            展会配置
+          </NavLink>
+        </div>
+
+        <div className="nav-group">
+          <div className="nav-label">收摊</div>
+          <NavLink to="/staff/reports" className={({ isActive }) => (isActive ? 'active' : '')}>
+            报表收摊
+          </NavLink>
+          <NavLink to="/staff/backup" className={({ isActive }) => (isActive ? 'active' : '')}>
+            备份恢复
+          </NavLink>
+          <NavLink to="/settings" className={({ isActive }) => (isActive ? 'active' : '')}>
+            设置
+          </NavLink>
+        </div>
+      </div>
+
+      <div className="side-bottom">
+        <NavLink to="/help" className={({ isActive }) => (isActive ? 'active' : '')}>
+          说明书
+        </NavLink>
+        {limited ? <div className="side-note">受限营业模式：请频繁导出备份</div> : null}
+        {staffUnlocked ? (
+          <button className="small ghost" onClick={lockStaff}>
+            锁定后台
+          </button>
+        ) : null}
+      </div>
     </nav>
   );
 }
@@ -330,7 +377,7 @@ function Shell() {
   }, [isKiosk]);
 
   return (
-    <div className="app">
+    <div className={isKiosk ? 'app app-kiosk' : 'app app-backend'}>
       {!isKiosk ? <Sidebar /> : null}
       <div className="main">
         {!isKiosk ? (
@@ -419,7 +466,6 @@ function Shell() {
                 </StaffGuard>
               }
             />
-            <Route path="/help" element={<HelpPage />} />
             <Route
               path="/settings"
               element={
@@ -436,6 +482,9 @@ function Shell() {
                 </StaffGuard>
               }
             />
+            {/* 说明书不加 StaffGuard：锁着也看得。
+                忘了 PIN 的人正需要翻它。 */}
+            <Route path="/help" element={<HelpPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </div>
@@ -455,6 +504,7 @@ export default function App() {
 
   if (stage === 'idle' || stage === 'checking') return <BootScreen />;
   if (stage === 'another-window') return <AnotherWindowScreen />;
+  if (stage === 'declined-limited') return <DeclinedLimitedScreen />;
   if (stage === 'blocked') return <BlockedScreen />;
   if (stage === 'error') return <BootScreen />;
 

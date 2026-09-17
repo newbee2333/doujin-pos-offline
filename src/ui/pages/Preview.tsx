@@ -43,7 +43,7 @@ export default function PreviewPage() {
   }
 
   return (
-    <div className="content">
+    <div className="page">
       <div className="row">
         <h1 style={{ margin: 0 }}>菜单预览</h1>
         <span className="spacer" />

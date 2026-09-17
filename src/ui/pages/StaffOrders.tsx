@@ -49,7 +49,7 @@ export default function StaffOrdersPage() {
   if (!eventId) return <ErrorBox message="请先选择展会" />;
 
   return (
-    <div className="content">
+    <div className="page">
       <h1>订单</h1>
       <div className="card">
         <div className="row">

@@ -75,6 +75,17 @@ export async function deleteCategory(id: string): Promise<void> {
   await ex().tx([{ t: 'run', sql: 'DELETE FROM categories WHERE id = ?', params: [id], expectChanges: 1 }]);
 }
 
+/**
+ * 每个分类下的商品数。
+ * 口径和服务层 deleteCategory 的拦截保持一致（含已归档）——
+ * 两处不一致的话，界面会显示「0 件」却删不掉，摊主只会觉得是 bug。
+ */
+export function countProductsByCategory(): Promise<{ category_id: string | null; c: number }[]> {
+  return ex().read<{ category_id: string | null; c: number }>(
+    'SELECT category_id, COUNT(*) AS c FROM products GROUP BY category_id'
+  );
+}
+
 /* ---------------------------------------------------------------- 商品 */
 
 export interface ProductFilter {

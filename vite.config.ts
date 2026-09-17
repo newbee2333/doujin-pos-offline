@@ -136,8 +136,8 @@ export default defineConfig({
         lang: 'zh-CN',
         display: 'standalone',
         orientation: 'any',
-        background_color: '#f6f5f2',
-        theme_color: '#b3541e',
+        background_color: '#f8fafc',
+        theme_color: '#f8fafc',
         icons: [
           { src: 'icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' }
         ]

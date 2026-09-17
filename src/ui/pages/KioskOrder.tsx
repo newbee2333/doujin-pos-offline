@@ -68,6 +68,8 @@ export default function KioskOrderPage() {
   if (!order) return <ErrorBox message="订单不存在或已不可访问" />;
 
   const currency = order.currency;
+  /** 有没有「收款码」那一块。零元单和已完成的单没有，此时不该摆两栏（右边会被推到一边）。 */
+  const showQr = order.status === 'pending_payment' && order.total_minor > 0;
 
   async function doConfirm() {
     setBusy(true);
@@ -119,9 +121,9 @@ export default function KioskOrderPage() {
         </span>
       </div>
 
-      <div className="content narrow">
-        <div className="card center">
-          <div className="small muted">订单号</div>
+      <div className={`content narrow kiosk-order-page${showQr ? ' has-qr' : ''}`}>
+        <div className="card center ord-no">
+          <div className="small muted">取货号</div>
           <div className="order-no">#{order.human_readable_number}</div>
           <div className="big-price" style={{ marginTop: 6 }}>
             {formatMoney(order.total_minor, currency)}
@@ -137,8 +139,8 @@ export default function KioskOrderPage() {
           </div>
         </div>
 
-        {order.status === 'pending_payment' && order.total_minor > 0 ? (
-          <div className="card">
+        {showQr ? (
+          <div className="card ord-qr">
             <h2>{detail.data!.order.planned_method_name_snapshot ?? '付款'}</h2>
             <QrPreview assetId={detail.data!.order.planned_qr_asset_id} />
             {detail.data!.order.planned_instruction_snapshot ? (
@@ -149,7 +151,7 @@ export default function KioskOrderPage() {
           </div>
         ) : null}
 
-        <div className="card">
+        <div className="card ord-items">
           <h2>商品明细</h2>
           {detail.data?.items.map((it) => (
             <div key={it.id} className="row" style={{ padding: '4px 0' }}>
@@ -164,11 +166,13 @@ export default function KioskOrderPage() {
           ))}
         </div>
 
-        <ErrorBox message={detail.error ?? error} />
+        <div className="ord-err">
+          <ErrorBox message={detail.error ?? error} />
+        </div>
 
         {order.status === 'pending_payment' ? (
           !canManage ? (
-            <div className="card">
+            <div className="card ord-staff">
               {pinMode ? (
                 <PinPad
                   hint="摊主 PIN"
@@ -189,7 +193,7 @@ export default function KioskOrderPage() {
               )}
             </div>
           ) : (
-            <div className="card">
+            <div className="card ord-staff">
               <h2>摊主处理</h2>
               {order.total_minor > 0 ? (
                 <div className="col">
@@ -253,7 +257,7 @@ export default function KioskOrderPage() {
         ) : null}
 
         {order.status === 'completed' ? (
-          <button className="primary block" style={{ minHeight: 54 }} onClick={finishAndReturn}>
+          <button className="primary block ord-staff" style={{ minHeight: 54 }} onClick={finishAndReturn}>
             完成并返回菜单
           </button>
         ) : null}

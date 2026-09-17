@@ -71,7 +71,7 @@ export default function KioskCheckoutPage() {
         <span className="title">结算</span>
       </div>
 
-      <div className="content narrow">
+      <div className="content narrow kiosk-with-action-bar">
         <div className="card">
           <h2>订单内容</h2>
           {cart.map((c) => (
@@ -127,16 +127,22 @@ export default function KioskCheckoutPage() {
             本场展会当前是「{event.data.status === 'closed' ? '已收摊' : '草稿'}」状态，暂时无法下单，请找摊主处理。
           </div>
         ) : null}
+      </div>
 
-        <button
-          className="primary block"
-          style={{ minHeight: 56, fontSize: '1.05rem' }}
-          disabled={busy || (totalMinor > 0 && !methodId) || !eventActive}
-          onClick={submit}
-        >
-          {busy ? <span className="spinner" /> : null}
-          提交订单
-        </button>
+      {/* 提交按钮移出内容流、钉在底部。
+          原来它排在最后一张卡下面，iPad 竖屏 820×1180 下按钮上方内容只占一半高度，
+          顾客付完款要往下找；现在落在单手拇指区，且始终可见。 */}
+      <div className="kiosk-action-bar">
+        <div className="inner">
+          <button
+            className="primary block"
+            disabled={busy || (totalMinor > 0 && !methodId) || !eventActive}
+            onClick={submit}
+          >
+            {busy ? <span className="spinner" /> : null}
+            提交订单{totalMinor > 0 ? ` ${formatMoney(totalMinor, currency)}` : ''}
+          </button>
+        </div>
       </div>
     </div>
   );

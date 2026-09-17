@@ -137,46 +137,63 @@ export default function KioskMenuPage() {
 
   return (
     <div className="kiosk" onPointerDown={touch} onKeyDown={touch}>
+      {/* 页头只占一行：标题块 / 分类胶囊 / 搜索框 / 摊主处理。
+          分类原来自己占一整行、搜索框占满整行，两行加起来 145px；
+          合起来之后 68px，省下的正好是一整行商品 ——
+          iPad 上浏览器导航栏先吃掉一大块，这块空间值得抠。 */}
       <div className="kiosk-hero">
         <div className="kiosk-hero-top">
-          <div style={{ flex: 1, minWidth: 0 }}>
+          <div className="kiosk-hero-head">
             <div className="kiosk-hero-title">商品目录</div>
             <div className="kiosk-hero-sub">共 {filtered.length} 件在售</div>
+          </div>
+          <div className="chip-row kiosk-chips">
+            <button
+              className={`chip ${category === '' ? 'active' : ''}`}
+              onClick={() => setCategory('')}
+            >
+              全部
+            </button>
+            {cats.data?.map((c) => (
+              <button
+                key={c.id}
+                className={`chip ${category === c.id ? 'active' : ''}`}
+                onClick={() => setCategory(c.id)}
+              >
+                {c.name}
+              </button>
+            ))}
+          </div>
+          {/* 搜索框挪到分类胶囊右侧的那块空位上，宽度收到 200px。
+              游客是一边翻一边找，搜索是低频动作，不该占掉一整行。 */}
+          <div className="kiosk-search">
+            <svg
+              width="15"
+              height="15"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.2"
+              strokeLinecap="round"
+              aria-hidden="true"
+            >
+              <circle cx="11" cy="11" r="7" />
+              <path d="M20 20l-3.2-3.2" />
+            </svg>
+            <input
+              type="search"
+              placeholder="搜索商品名 / 分类"
+              value={keyword}
+              onChange={(e) => {
+                setKeyword(e.target.value);
+                touch();
+              }}
+            />
           </div>
           <button className="small ghost" onClick={() => navigate('/staff/pending')}>
             摊主处理
           </button>
         </div>
-        <div className="kiosk-search">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
-            <circle cx="11" cy="11" r="7" />
-            <path d="M20 20l-3.2-3.2" />
-          </svg>
-          <input
-            type="search"
-            placeholder="搜索商品名 / 分类"
-            value={keyword}
-            onChange={(e) => {
-              setKeyword(e.target.value);
-              touch();
-            }}
-          />
-        </div>
-      </div>
-
-      <div className="chip-row">
-        <button className={`chip ${category === '' ? 'active' : ''}`} onClick={() => setCategory('')}>
-          全部
-        </button>
-        {cats.data?.map((c) => (
-          <button
-            key={c.id}
-            className={`chip ${category === c.id ? 'active' : ''}`}
-            onClick={() => setCategory(c.id)}
-          >
-            {c.name}
-          </button>
-        ))}
       </div>
 
       {warnAt !== null ? (

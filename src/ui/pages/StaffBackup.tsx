@@ -40,7 +40,7 @@ export default function StaffBackupPage() {
   }
 
   return (
-    <div className="content narrow">
+    <div className="page narrow">
       <h1>备份与恢复</h1>
 
       <div className="card">

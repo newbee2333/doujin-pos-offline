@@ -134,6 +134,31 @@ export function getProductRanking(eventId: string): Promise<ProductRankRow[]> {
   );
 }
 
+export interface VariantSalesRow {
+  variant_id: string;
+  sold_units: number;
+}
+
+/**
+ * 本场每个规格的已售件数。
+ *
+ * 口径必须与上面的商品排行完全一致（同一组 SALES_STATUSES、同样不扣退货）——
+ * 两边数字对不上比没有这个数字更糟：摊主会以为其中一个是错的。
+ * 退货在「库存成分消耗」那一路单独算，不走这里。
+ *
+ * 用 variant_id 分组（排行用的是三个快照字段），因为调用方是参展商品表，
+ * 那张表每行就是一个 variant。
+ */
+export function getVariantSales(eventId: string): Promise<VariantSalesRow[]> {
+  return ex().read<VariantSalesRow>(
+    `SELECT oi.variant_id AS variant_id, SUM(oi.quantity) AS sold_units
+     FROM order_items oi JOIN orders o ON o.id = oi.order_id
+     WHERE o.event_id = ? AND o.status IN ${SALES_STATUSES}
+     GROUP BY oi.variant_id`,
+    [eventId]
+  );
+}
+
 export interface ConsumptionRow {
   variant_id: string;
   component_name: string;

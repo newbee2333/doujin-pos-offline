@@ -55,18 +55,31 @@ async function boot(page) {
   }
 }
 
+/**
+ * 输 PIN 进后台。
+ *
+ * 2026-09-16 起首次是「设 PIN → 再确认一遍」，键盘也换成了
+ * `.pin-keys .pin-digit` / `.pin-actions button.primary`。
+ * 旧写法（button 文本 / getByRole 确认）一个键都点不到，于是永远停在 PIN 页 ——
+ * 后面就报「找不到『新建展会』」，看着像 CI 坏了。
+ * 这里循环到键盘消失为止，两种情形（首次设置 / 之后解锁）都覆盖。
+ */
+async function enterPin(page) {
+  for (let i = 0; i < 3; i++) {
+    if (!(await page.locator('.pin-keys .pin-digit').count())) break;
+    for (const d of ['1', '2', '3', '4']) {
+      await page.click(`.pin-keys .pin-digit:text-is("${d}")`);
+    }
+    await page.click('.pin-actions button.primary');
+    await page.waitForTimeout(800);
+  }
+}
+
 /** 整页跳转会重置内存会话，每次进后台都要处理 PIN（首次是「设置」、之后是「请输入」）。 */
 async function gotoStaff(page, path) {
   await page.goto(BASE + path, { waitUntil: 'networkidle' });
   await page.waitForTimeout(800);
-  const needs = (await page.getByText('设置后台 PIN').count()) || (await page.getByText('请输入后台 PIN').count());
-  if (needs) {
-    for (const d of ['1', '2', '3', '4']) {
-      await page.locator('button', { hasText: new RegExp(`^${d}$`) }).first().click();
-    }
-    await page.getByRole('button', { name: '确认' }).first().click();
-    await page.waitForTimeout(800);
-  }
+  await enterPin(page);
 }
 
 try {

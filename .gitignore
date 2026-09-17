@@ -22,6 +22,11 @@ coverage/
 test-results/
 playwright-report/
 
+# 验收脚本的截图目录（脚本入库，图不入库 —— 一轮就有十几 MB）
+scripts/ui*/
+scripts/r10*/
+scripts/shots*/
+
 # 编辑器与系统
 .vscode/*
 !.vscode/extensions.json
