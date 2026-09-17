@@ -29,6 +29,26 @@ page.on('console', (m) => {
   if (m.type() === 'error') errors.push(`console: ${m.text()}`);
 });
 
+/**
+ * 输 PIN 进后台。
+ *
+ * 2026-09-16 起首次是「设 PIN → 再确认一遍」，键盘也换成了
+ * `.pin-keys .pin-digit` / `.pin-actions button.primary`。
+ * 旧写法（button 文本 / getByRole 确认）一个键都点不到，于是永远停在 PIN 页 ——
+ * 后面就报「找不到『新建展会』」，看着像 CI 坏了。
+ * 这里循环到键盘消失为止，两种情形（首次设置 / 之后解锁）都覆盖。
+ */
+async function enterPin(page) {
+  for (let i = 0; i < 3; i++) {
+    if (!(await page.locator('.pin-keys .pin-digit').count())) break;
+    for (const d of ['1', '2', '3', '4']) {
+      await page.click(`.pin-keys .pin-digit:text-is("${d}")`);
+    }
+    await page.click('.pin-actions button.primary');
+    await page.waitForTimeout(800);
+  }
+}
+
 async function boot() {
   await page.goto(BASE, { waitUntil: 'networkidle' });
   await page.waitForFunction(
@@ -42,26 +62,14 @@ async function boot() {
   // 首次进后台需要设置 PIN
   await page.goto(`${BASE}staff/events`, { waitUntil: 'networkidle' });
   await page.waitForTimeout(700);
-  if (await page.getByText('设置后台 PIN').count()) {
-    for (const d of ['1', '2', '3', '4']) {
-      await page.locator('button', { hasText: new RegExp(`^${d}$`) }).first().click();
-    }
-    await page.getByRole('button', { name: '确认' }).first().click();
-    await page.waitForTimeout(600);
-  }
+  await enterPin(page);
 }
 
 /** 整页跳转会重置内存会话，需要重新解锁后台。 */
 async function gotoStaff(path) {
   await page.goto(BASE + path, { waitUntil: 'networkidle' });
   await page.waitForTimeout(700);
-  if (await page.getByText('请输入后台 PIN').count()) {
-    for (const d of ['1', '2', '3', '4']) {
-      await page.locator('button', { hasText: new RegExp(`^${d}$`) }).first().click();
-    }
-    await page.getByRole('button', { name: '确认' }).first().click();
-    await page.waitForTimeout(700);
-  }
+  await enterPin(page);
 }
 
 try {
@@ -80,7 +88,8 @@ try {
   await gotoStaff('staff/products');
   await page.getByRole('button', { name: '新增商品' }).click();
   await page.locator('.modal input').first().fill('冒烟本');
-  await page.locator('.modal input').nth(1).fill('25.00');
+  // 默认价格有自己的 placeholder；按序号取会填到「简称」那一格
+  await page.locator('.modal input[placeholder="0.00"]').first().fill('25.00');
   await page.locator('.modal').getByRole('button', { name: '创建' }).click();
   await page.waitForTimeout(800);
   if (await page.getByText('冒烟本').count()) ok('创建商品');
@@ -127,17 +136,20 @@ try {
   await gotoStaff('staff/checkout');
   await page.locator('input[type="search"]').first().fill('冒烟本');
   await page.waitForTimeout(500);
-  await page.getByRole('button', { name: /\+ 加入/ }).first().click();
+  // 加购是卡片上的圆形「+」（.pos-add），按钮里没有「加入」两个字 ——
+  // 收银台改版时这句没跟着改，CI 就一直卡在这里
+  await page.locator('.pos-add').first().click();
   await page.waitForTimeout(300);
   const payable = await page.locator('.big-price').first().innerText();
   ok('加入商品', `应付 ${payable}`);
 
-  await page.locator('select').last().selectOption({ label: '现金' });
+  // 收款方式是分段控件（.seg-item），不是 select
+  await page.locator('.seg-item').filter({ hasText: '现金' }).first().click();
   await page.waitForTimeout(300);
   const cashInput = page.locator('input[placeholder="0.00"]').last();
   await cashInput.fill('30.00');
   await page.waitForTimeout(300);
-  await page.getByRole('button', { name: /确认收款并完成/ }).click();
+  await page.getByRole('button', { name: /确认收款/ }).click();
   await page.waitForTimeout(1200);
 
   const afterSale = await page.evaluate(() => document.body.innerText);

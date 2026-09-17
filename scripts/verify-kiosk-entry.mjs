@@ -33,6 +33,26 @@ page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
 
 const path = () => page.evaluate(() => location.pathname);
 /** 首次进后台是「设置后台 PIN」，之后是「请输入后台 PIN」，两种都算锁着。 */
+/**
+ * 输 PIN 进后台。
+ *
+ * 2026-09-16 起首次是「设 PIN → 再确认一遍」，键盘也换成了
+ * `.pin-keys .pin-digit` / `.pin-actions button.primary`。
+ * 旧写法（button 文本 / getByRole 确认）一个键都点不到，于是永远停在 PIN 页 ——
+ * 后面就报「找不到『新建展会』」，看着像 CI 坏了。
+ * 这里循环到键盘消失为止，两种情形（首次设置 / 之后解锁）都覆盖。
+ */
+async function enterPin(page) {
+  for (let i = 0; i < 3; i++) {
+    if (!(await page.locator('.pin-keys .pin-digit').count())) break;
+    for (const d of ['1', '2', '3', '4']) {
+      await page.click(`.pin-keys .pin-digit:text-is("${d}")`);
+    }
+    await page.click('.pin-actions button.primary');
+    await page.waitForTimeout(800);
+  }
+}
+
 const pinVisible = async () =>
   (await page.locator('text=请输入后台 PIN').count()) > 0 ||
   (await page.locator('text=设置后台 PIN').count()) > 0;
@@ -56,13 +76,7 @@ try {
   }
   await page.goto(BASE + 'staff/events', { waitUntil: 'networkidle' });
   await page.waitForTimeout(800);
-  if (await pinVisible()) {
-    for (const d of ['1', '2', '3', '4']) {
-      await page.locator('button', { hasText: new RegExp(`^${d}$`) }).first().click();
-    }
-    await page.getByRole('button', { name: '确认' }).first().click();
-    await page.waitForTimeout(900);
-  }
+  await enterPin(page);
   ok('建库并解锁后台', `路径 ${await path()}`);
 
   // 先建一个展会：否则「展会配置」显示的是展会列表，看不到「参展商品」卡片
