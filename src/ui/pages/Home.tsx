@@ -46,7 +46,7 @@ export default function HomePage() {
   if (error) return <ErrorBox message={error} />;
 
   return (
-    <div className="content narrow">
+    <div className="page narrow">
       {remind ? (
         <div className="notice">
           距上次确认保存已超过 24 小时，或还没有备份。请在营业前后到「备份恢复」导出完整数据库。

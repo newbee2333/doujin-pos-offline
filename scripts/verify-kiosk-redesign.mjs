@@ -23,20 +23,31 @@ async function ready() {
   });
 }
 
+/** 打一遍 4 位 PIN 再确认 */
+async function tapPin() {
+  for (const d of ['1', '2', '3', '4']) {
+    await page.locator('.pin-keys .pin-digit', { hasText: new RegExp(`^${d}$`) }).first().click();
+  }
+  await page.locator('.pin-actions button.primary').first().click();
+  await page.waitForTimeout(800);
+}
+
 async function gotoStaff(path) {
   await page.goto(BASE + path, { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(1200);
-  const digit = page.locator('button', { hasText: /^1$/ }).first();
+  const digit = page.locator('.pin-keys .pin-digit').first();
   try {
     await digit.waitFor({ state: 'visible', timeout: 12000 });
   } catch {
     return;
   }
-  for (const d of ['1', '2', '3', '4']) {
-    await page.locator('button', { hasText: new RegExp(`^${d}$`) }).first().click();
-  }
-  await page.getByRole('button', { name: '确认' }).first().click();
-  await page.waitForTimeout(1500);
+  // 首次是「设置后台 PIN」要连输两遍（第一遍设置 + 第二遍确认），之后是解锁一遍。
+  // 这个脚本原来只打一遍，设 PIN 那一步会卡在第二遍的界面上，
+  // 后续找不到「新建展会」而超时 —— 是脚本没跟上两遍式改动，不是应用的问题。
+  const needsSetup = await page.getByText('设置后台 PIN').count();
+  if (needsSetup) await tapPin();
+  await tapPin();
+  await page.waitForTimeout(1200);
 }
 
 try {

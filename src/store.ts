@@ -16,7 +16,7 @@ export interface CartItem {
   coverAssetId: string | null;
 }
 
-export type BootStage = 'idle' | 'checking' | 'ready' | 'blocked' | 'another-window' | 'error';
+export type BootStage = 'idle' | 'checking' | 'ready' | 'blocked' | 'declined-limited' | 'another-window' | 'error';
 
 export interface BootDiagnostics {
   capabilities: CapabilityReport | null;

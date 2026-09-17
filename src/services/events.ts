@@ -276,18 +276,35 @@ export async function listEventConfigs(eventId: string): Promise<EventConfigRow[
   );
 }
 
+/**
+ * 把商品规格加入本场。
+ *
+ * 本场价格直接沿用商品的默认价格 —— 原来插入的是 NULL，
+ * 于是「加入所选」之后整张表的「本场价格」是空的，现场看起来像没定价，
+ * 而且被开场的「N 个启用商品未设置本场价格」挡住，还不知道拦在哪。
+ * 弹窗里写的「本场价格默认沿用商品默认价格」本来就该是这个意思。
+ *
+ * 币种不同则仍然留空：把 120 日元当 120 元是实打实的算错账，
+ * 宁可让摊主自己填，也不做汇率臆测。
+ */
 export async function addVariantsToEvent(eventId: string, variantIds: string[]): Promise<void> {
+  if (!variantIds.length) return;
+  const ev = await getEvent(eventId);
+  const currency = ev?.currency ?? null;
   const steps: Step[] = [];
   for (const variantId of variantIds) {
     steps.push({
       t: 'run',
       sql: `INSERT INTO event_variant_configs (event_id, variant_id, enabled, event_price_minor, sort_order, purchase_limit, show_exact_stock, low_stock_threshold, kiosk_visible)
-            SELECT ?, ?, 1, NULL,
+            SELECT ?, ?, 1,
+                   (SELECT CASE WHEN p.default_currency = ? THEN p.default_price_minor ELSE NULL END
+                      FROM product_variants v2 JOIN products p ON p.id = v2.product_id
+                     WHERE v2.id = ?),
                    (SELECT COALESCE(MAX(sort_order),0)+1 FROM event_variant_configs WHERE event_id = ?),
                    NULL, 0, 3,
                    CASE WHEN (SELECT p.type FROM product_variants v2 JOIN products p ON p.id = v2.product_id WHERE v2.id = ?) = 'gift' THEN 0 ELSE 1 END
             ON CONFLICT(event_id, variant_id) DO NOTHING`,
-      params: [eventId, variantId, eventId, variantId]
+      params: [eventId, variantId, currency, variantId, eventId, variantId]
     });
   }
   if (steps.length) await ex().tx(steps);
@@ -342,6 +359,44 @@ export async function bulkSetCategoryEnabled(
       params: [enabled ? 1 : 0, eventId, categoryId]
     }
   ]);
+}
+
+/**
+ * 把规格从本场移除（连同它的本场配置整行删掉）。
+ *
+ * 与「下架」的区别：下架是留着配置、只是不进游客菜单与收银台；
+ * 移除是从参展商品表里整行去掉，本场价格、库存开关、上架状态一起没了。
+ *
+ * 只挡一种情况：这件还有待付款订单占着预留 —— 那种状态下删配置会让预留凭空悬着。
+ * 其余一律允许。**库存流水与 initial_stock 故意保留在原地**：
+ * 它们是「这批货带到过这场」的记录，万一以后又加回来，备货数和流水都还在，
+ * 不会被当成新加的货重录一遍（重复 initializeStock 会把 initial_stock 覆盖掉）。
+ */
+export async function removeVariantsFromEvent(eventId: string, variantIds: string[]): Promise<void> {
+  if (!variantIds.length) return;
+  const ph = variantIds.map(() => '?').join(',');
+  const held = await ex().read<{ product_name: string; reserved_stock: number }>(
+    `SELECT p.name AS product_name, i.reserved_stock
+     FROM inventory i
+     JOIN product_variants v ON v.id = i.variant_id
+     JOIN products p ON p.id = v.product_id
+     WHERE i.event_id = ? AND i.variant_id IN (${ph}) AND i.reserved_stock > 0`,
+    [eventId, ...variantIds]
+  );
+  if (held.length) {
+    throw new DomainError(
+      `${held
+        .map((h) => `「${h.product_name}」还有 ${h.reserved_stock} 件被待付款订单占用`)
+        .join('；')}，请先处理那些订单`
+    );
+  }
+  const steps: Step[] = variantIds.map((variantId) => ({
+    t: 'run',
+    sql: 'DELETE FROM event_variant_configs WHERE event_id = ? AND variant_id = ?',
+    params: [eventId, variantId]
+  }));
+  steps.push(auditStep('event.variant_remove', 'event', eventId, { variantIds }));
+  await ex().tx(steps);
 }
 
 /* ------------------------------------------------------------ 支付方式 */

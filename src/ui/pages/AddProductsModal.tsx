@@ -1,13 +1,15 @@
 /**
- * 添加商品到本场：现场新建一个商品并立即加入，或从已有商品里勾选加入。
- * 不做"导入"：商品本身的图片、规格、套装等请到「商品」页维护完整。
+ * 添加商品到本场：从已有商品里勾选加入，或转去「新增商品」（用商品页同一套编辑器）。
+ *
+ * 这里曾经自己带一套精简的「现场新建」表单（只有名称/类型/价格/分类四项），
+ * 和商品页的「新增商品」、以及「编辑商品」是三套不同的字段集。
+ * 现在只保留「从已有商品勾选」这一件事，新建走同一个编辑器——
+ * 一个对象一套字段，不再有「建完发现少了封面和说明，还得再点一次编辑」。
  */
 import { useMemo, useState } from 'react';
 import { addVariantsToEvent } from '../../services/events';
-import { createProduct } from '../../services/catalog';
 import { errorMessage } from '../../store';
-import { ErrorBox, Field, Modal } from '../components';
-import type { Currency, ProductType } from '../../domain/types';
+import { AssetImage, ErrorBox, Modal } from '../components';
 
 interface NotAddedItem {
   id: string;
@@ -15,34 +17,27 @@ interface NotAddedItem {
   sku: string | null;
   pname: string;
   ptype: string;
+  /** 商品的封面与分类，用来在列表里认出是哪一件 */
+  cover?: string | null;
+  category?: string | null;
 }
 
 export default function AddProductsModal({
   eventId,
-  currency,
   notAdded,
-  categories,
   onClose,
-  onAdded
+  onAdded,
+  onCreateNew
 }: {
   eventId: string;
-  currency: Currency;
   notAdded: NotAddedItem[];
-  categories: { id: string; name: string }[];
   onClose: () => void;
   onAdded: () => void;
+  /** 转去「新增商品」：调用方负责关掉本弹窗并打开商品编辑器 */
+  onCreateNew: () => void;
 }) {
-  const [tab, setTab] = useState<'existing' | 'new'>(notAdded.length ? 'existing' : 'new');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-
-  // 新建并加入
-  const [name, setName] = useState('');
-  const [type, setType] = useState<ProductType>('normal');
-  const [price, setPrice] = useState('');
-  const [categoryId, setCategoryId] = useState(categories[0]?.id ?? '');
-
-  // 从已有选择
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
   const grouped = useMemo(() => {
@@ -54,6 +49,8 @@ export default function AddProductsModal({
     }
     return Array.from(m.entries());
   }, [notAdded]);
+
+  const allIds = useMemo(() => notAdded.map((v) => v.id), [notAdded]);
 
   async function doExisting() {
     if (!selected.size) {
@@ -72,40 +69,6 @@ export default function AddProductsModal({
     }
   }
 
-  async function doNew() {
-    if (!name.trim()) {
-      setError('请填写商品名称');
-      return;
-    }
-    setBusy(true);
-    setError(null);
-    try {
-      let priceMinor: number | null = null;
-      if (price.trim()) {
-        const n = Number(price);
-        if (!Number.isFinite(n) || n < 0) {
-          setError('默认价格必须为非负数');
-          setBusy(false);
-          return;
-        }
-        priceMinor = currency === 'CNY' ? Math.round(n * 100) : Math.round(n);
-      }
-      const { variantId } = await createProduct({
-        name: name.trim(),
-        type,
-        category_id: categoryId || null,
-        default_currency: currency,
-        default_price_minor: priceMinor
-      });
-      await addVariantsToEvent(eventId, [variantId]);
-      onAdded();
-    } catch (e) {
-      setError(errorMessage(e));
-    } finally {
-      setBusy(false);
-    }
-  }
-
   return (
     <Modal
       title="添加商品到本场"
@@ -115,122 +78,106 @@ export default function AddProductsModal({
           <button onClick={onClose} disabled={busy}>
             取消
           </button>
-          {tab === 'existing' ? (
-            <button className="primary" disabled={busy || !selected.size} onClick={doExisting}>
-              {busy ? <span className="spinner" /> : null}
-              加入所选（{selected.size}）
-            </button>
-          ) : (
-            <button className="primary" disabled={busy || !name.trim()} onClick={doNew}>
-              {busy ? <span className="spinner" /> : null}
-              新建并加入本场
-            </button>
-          )}
+          <button className="primary" disabled={busy || !selected.size} onClick={doExisting}>
+            {busy ? <span className="spinner" /> : null}
+            加入所选（{selected.size}）
+          </button>
         </>
       }
     >
       <div className="col">
-        <div className="row tight">
-          <button
-            className={tab === 'existing' ? 'primary' : ''}
-            disabled={busy}
-            onClick={() => setTab('existing')}
-          >
-            从已有商品（{notAdded.length}）
-          </button>
-          <button
-            className={tab === 'new' ? 'primary' : ''}
-            disabled={busy}
-            onClick={() => setTab('new')}
-          >
-            现场新建一个
-          </button>
-        </div>
-
-        {tab === 'existing' ? (
-          notAdded.length ? (
-            <div className="col">
-              <p className="tiny muted" style={{ marginBottom: 0 }}>
-                勾选要加入本场的商品，默认本场价格使用商品默认价格（之后可在「参展商品」表里逐个修改）。
+        {notAdded.length ? (
+          <>
+            <div className="row">
+              <p className="tiny muted" style={{ margin: 0, flex: 1, minWidth: 200 }}>
+                勾选要加入本场的商品。本场价格默认沿用商品默认价格，之后可以在「参展商品」表里逐个改。
               </p>
-              <div className="table-wrap" style={{ maxHeight: '40vh' }}>
-                <table>
-                  <thead>
-                    <tr>
-                      <th />
-                      <th>商品</th>
-                      <th>规格</th>
-                      <th>SKU</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {grouped.flatMap(([pname, vs]) =>
-                      vs.map((v) => (
-                        <tr key={v.id}>
-                          <td>
-                            <input
-                              type="checkbox"
-                              checked={selected.has(v.id)}
-                              onChange={(e) => {
-                                const s = new Set(selected);
-                                if (e.target.checked) s.add(v.id);
-                                else s.delete(v.id);
-                                setSelected(s);
-                              }}
-                            />
-                          </td>
-                          <td>{pname}</td>
-                          <td>{v.name}</td>
-                          <td className="tiny muted">{v.sku ?? '—'}</td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
+              <button onClick={onCreateNew} disabled={busy}>
+                + 新增商品
+              </button>
             </div>
-          ) : (
-            <div className="notice info">
-              目前还没有可以"直接加入"的商品。切换到「现场新建一个」来创建首个商品，或到「商品」页维护图片、规格、套装等完整信息后再回来加入。
+            {/* 商品多的时候逐个点太慢：整批加入是常见动作，给一对全选 / 取消全选。
+                取消全选只在有选中项时可点，避免点了个没反应的按钮。 */}
+            <div className="row" style={{ marginTop: 2 }}>
+              <button
+                className="small"
+                disabled={busy || selected.size === allIds.length}
+                onClick={() => setSelected(new Set(allIds))}
+              >
+                全选
+              </button>
+              <button
+                className="small"
+                disabled={busy || selected.size === 0}
+                onClick={() => setSelected(new Set())}
+              >
+                取消全选
+              </button>
+              <span className="small muted">
+                已选 {selected.size} / {notAdded.length}
+              </span>
             </div>
-          )
+            <div className="table-wrap" style={{ maxHeight: '40vh' }}>
+              <table>
+                <thead>
+                  <tr>
+                    <th />
+                    <th>商品</th>
+                    <th>规格</th>
+                    <th>SKU</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {grouped.flatMap(([pname, vs]) =>
+                    vs.map((v) => (
+                      <tr key={v.id}>
+                        <td>
+                          <input
+                            type="checkbox"
+                            checked={selected.has(v.id)}
+                            aria-label={`选择 ${pname}`}
+                            onChange={(e) => {
+                              const s = new Set(selected);
+                              if (e.target.checked) s.add(v.id);
+                              else s.delete(v.id);
+                              setSelected(s);
+                            }}
+                          />
+                        </td>
+                        <td>
+                          {/* 同名商品靠封面和分类区分，光看名字容易勾错 */}
+                          <span className="cell-product">
+                            <AssetImage assetId={v.cover ?? null} alt={pname} className="row-thumb" />
+                            <span className="cell-body">
+                              <span>{pname}</span>
+                              {v.category ? (
+                                <span className="tiny muted" style={{ display: 'block' }}>
+                                  {v.category}
+                                </span>
+                              ) : null}
+                            </span>
+                          </span>
+                        </td>
+                        <td>{v.name}</td>
+                        <td className="tiny muted">{v.sku ?? '—'}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </>
         ) : (
           <div className="col">
-            <p className="tiny muted" style={{ marginBottom: 0 }}>
-              现场新建只填最少字段：名称、类型、默认价格、分类。封面图、更多规格、套装成分等到「商品」页继续完善。
-            </p>
-            <div className="grid cols-2">
-              <Field label="商品名称 *">
-                <input value={name} onChange={(e) => setName(e.target.value)} placeholder="例如 本子《新刊》" />
-              </Field>
-              <Field label="类型">
-                <select value={type} onChange={(e) => setType(e.target.value as ProductType)}>
-                  <option value="normal">普通库存</option>
-                  <option value="bundle">虚拟套装</option>
-                  <option value="gift">赠品</option>
-                  <option value="non_stock">不计库存</option>
-                </select>
-              </Field>
-              <Field label={`默认价格（${currency === 'CNY' ? '元' : '日元'}）`}>
-                <input
-                  value={price}
-                  onChange={(e) => setPrice(e.target.value)}
-                  placeholder={currency === 'CNY' ? '0.00' : '0'}
-                />
-              </Field>
-              <Field label="分类">
-                <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
-                  {categories.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-              </Field>
+            <div className="notice info">
+              还没有可以「直接加入」的商品——所有商品都已经在本场了，或者商品库还是空的。
             </div>
-            <p className="tiny muted" style={{ marginBottom: 0 }}>
-              这里的默认价格仅作为填表参考；本场真正价格以「参展商品」表里填的「本场价格」为准。
-            </p>
+            <div className="row">
+              <button className="primary" onClick={onCreateNew} disabled={busy}>
+                + 新增商品并加入本场
+              </button>
+              <span className="tiny muted">用和「商品」页完全一样的表单，含封面、说明、原作等全部字段。</span>
+            </div>
           </div>
         )}
 

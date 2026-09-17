@@ -1,93 +1,78 @@
 import { useState } from 'react';
-import { getSetting, setSetting } from '../../services/context';
-import { isPinSet, setPin, verifyPin } from '../../services/system';
+import { setSetting } from '../../services/context';
+import { isPinSet, setPin } from '../../services/system';
 import { checkCapabilities, requestPersistence } from '../../db/storage-guard';
 import { errorMessage, useApp } from '../../store';
-import { ErrorBox, Field, PinPad, Spinner, useAsync } from '../components';
+import { ErrorBox, Field, SetPinFlow, Spinner, useAsync } from '../components';
 import { formatBytes } from '../../domain/image';
 
 export default function SettingsPage() {
   const diagnostics = useApp((s) => s.diagnostics);
   const limited = useApp((s) => s.limitedMode);
   const showToast = useApp((s) => s.showToast);
-  const [mode, setMode] = useState<'none' | 'verify' | 'new'>('none');
+  const [mode, setMode] = useState<'none' | 'new'>('none');
   const [error, setError] = useState<string | null>(null);
-  const [showExact, setShowExact] = useState<string>('0');
 
   const pinSet = useAsync(() => isPinSet(), []);
   const persisted = useAsync(() => requestPersistence(), []);
   const caps = useAsync(() => checkCapabilities(), []);
-  const stockSetting = useAsync(() => getSetting('display.show_exact_stock'), []);
-
-  if (stockSetting.data !== null && showExact !== stockSetting.data && stockSetting.data !== undefined) {
-    setShowExact(stockSetting.data);
-  }
 
   return (
-    <div className="content narrow">
+    <div className="page narrow">
       <h1>设置</h1>
 
       <div className="card">
-        <h2>后台 PIN</h2>
+        <h2>安全与访问</h2>
         <p className="small muted">
           PIN 只用于防止游客误触后台，不是对设备持有者的强安全认证。不要通过 URL 传递。
         </p>
         {pinSet.loading ? (
           <Spinner label="读取…" />
         ) : mode === 'none' ? (
-          <button
-            onClick={() => setMode(pinSet.data ? 'verify' : 'new')}
-          >
-            {pinSet.data ? '修改 PIN' : '设置 PIN'}
-          </button>
-        ) : mode === 'verify' ? (
-          <PinPad
-            hint="先输入当前 PIN"
-            error={error}
-            onCancel={() => setMode('none')}
-            onSubmit={async (pin) => {
-              if (await verifyPin(pin)) {
-                setError(null);
-                setMode('new');
-              } else setError('PIN 不正确');
-            }}
-          />
+          <div className="col">
+            <div className="row">
+              <button onClick={() => setMode('new')}>
+                {pinSet.data ? '修改后台 PIN' : '设置后台 PIN'}
+              </button>
+              <span className="tiny muted">改完不会把你踢出去，下次进入后台时生效。</span>
+            </div>
+            <p className="tiny muted" style={{ margin: 0 }}>
+              忘记 PIN 没有自助找回的办法：一旦忘了就进不去后台，只能清空本站数据重来
+              （商品和订单会一起没掉）。所以请先用上面的按钮把它改成一个你记得住的数字，
+              并把导出备份养成习惯。
+            </p>
+          </div>
         ) : (
-          <PinPad
-            hint="输入新的 4 到 8 位数字"
-            error={error}
-            onCancel={() => setMode('none')}
-            onSubmit={async (pin) => {
-              try {
-                await setPin(pin);
+          <>
+            <ErrorBox message={error} />
+            {/* 不要求先输旧 PIN：能走到这一页说明会话本来就是解锁状态，
+                再输一次只是多一道仪式感。 */}
+            <SetPinFlow
+              firstHint="输入新的 4 到 8 位数字"
+              onCancel={() => {
                 setError(null);
                 setMode('none');
-                pinSet.reload();
-                showToast('PIN 已更新');
-              } catch (e) {
-                setError(errorMessage(e));
-              }
-            }}
-          />
+              }}
+              onSubmit={async (pin) => {
+                try {
+                  await setPin(pin);
+                  setError(null);
+                  setMode('none');
+                  pinSet.reload();
+                  showToast('PIN 已更新，下次进入后台时生效');
+                } catch (e) {
+                  setError(errorMessage(e));
+                }
+              }}
+            />
+          </>
         )}
       </div>
 
-      <div className="card">
-        <h2>库存展示</h2>
-        <label className="check">
-          <input
-            type="checkbox"
-            checked={showExact === '1'}
-            onChange={async (e) => {
-              const v = e.target.checked ? '1' : '0';
-              setShowExact(v);
-              await setSetting('display.show_exact_stock', v);
-            }}
-          />
-          游客菜单默认显示精确剩余数量（不选则显示「有货 / 少量 / 售罄」）
-        </label>
-        <p className="tiny muted">单个商品仍可在展会配置里单独覆盖。</p>
-      </div>
+      {/* 「库存展示」原来在设置里，但真正要调的是「哪几个商品露库存」——
+          那是个逐商品的开关，在展会配置的参展商品表里。设置里放一个全局默认值，
+          既和逐商品开关重复，又让人以为改了它就等于改了全部。
+          现在只保留逐商品开关，说明挂在那个列头的问号上。 */}
 
       <div className="card">
         <h2>存储与离线状态</h2>

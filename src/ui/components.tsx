@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { formatMoney } from '../domain/money';
 import type { Currency } from '../domain/types';
@@ -185,6 +185,92 @@ export function ConfirmDialog({
 
 /* --------------------------------------------------------------- 表单件 */
 
+/**
+ * 挂在标签旁边的问号说明。
+ *
+ * 桌面端悬停就出，触屏端点一下切换（`:hover` 在 iPad 上没有对应动作）。
+ * 两套都留着而不是二选一：同一个应用两种设备都在用。
+ */
+/**
+ * 同一时刻只留一个说明气泡。
+ *
+ * 模块级记一个「当前开着的那个」就够——气泡之间没有嵌套关系。
+ * 用自增 id 而不是函数引用做身份：`close` 每次渲染都是新函数，
+ * 拿它比对永远不相等（这一版最初的写法就是这么错的）。
+ */
+let openBubble: { id: number; close: () => void } | null = null;
+let bubbleSeq = 1;
+
+/**
+ * 列头问号。桌面 hover 出、触屏点击切换。
+ *
+ * ⚠️ 触屏上「怎么关掉」踩过一次坑，改法都写在这里，别再退回去：
+ *  1. 原来 CSS 里有 `.info-dot-wrap:focus-within .info-bubble { display:block }`。
+ *     iPad 上点一下按钮会**一直保持焦点**，于是 `setOpen(false)` 也关不掉 ——
+ *     再点一次问号看起来毫无反应，用户不知道该点哪里。现在改成
+ *     `:has(.info-dot:focus-visible)`：键盘 Tab 过来仍然出气泡，
+ *     手指点过不留 `focus-visible`，不会卡住。
+ *  2. 补上「点气泡外面关掉」（pointerdown 监听）和气泡右上角的 ×。
+ *  3. 新开一个气泡时把上一个关掉，否则屏幕上会同时挂两个。
+ */
+export function InfoDot({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
+  const [id] = useState(() => bubbleSeq++);
+  const wrapRef = useRef<HTMLSpanElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: Event) => {
+      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('pointerdown', onDown);
+    return () => document.removeEventListener('pointerdown', onDown);
+  }, [open]);
+
+  function close() {
+    if (openBubble?.id === id) openBubble = null;
+    setOpen(false);
+  }
+
+  return (
+    <span ref={wrapRef} className={`info-dot-wrap${open ? ' open' : ''}`}>
+      <button
+        type="button"
+        className="info-dot"
+        aria-label="说明"
+        aria-expanded={open}
+        onClick={(e) => {
+          // 表头里点问号不该顺带触发表格的排序/选择行为
+          e.stopPropagation();
+          if (open) {
+            close();
+            return;
+          }
+          if (openBubble && openBubble.id !== id) openBubble.close();
+          openBubble = { id, close };
+          setOpen(true);
+        }}
+      >
+        ?
+      </button>
+      <span className="info-bubble" role="tooltip">
+        {text}
+        <button
+          type="button"
+          className="info-bubble-close"
+          aria-label="关闭说明"
+          onClick={(e) => {
+            e.stopPropagation();
+            close();
+          }}
+        >
+          ×
+        </button>
+      </span>
+    </span>
+  );
+}
+
 export function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <label className="field">
@@ -225,6 +311,9 @@ export function QtyStepper({
 /* --------------------------------------------------------------- PIN */
 
 const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '清空', '0', '删除'];
+/** 数字键和功能键要分开渲染：功能键是中文两字，和数字用同一个字号会明显更宽，
+ *  一排三个看起来就不齐。 */
+const FN_KEYS = new Set(['清空', '删除']);
 
 export function PinPad({
   onSubmit,
@@ -245,20 +334,24 @@ export function PinPad({
   };
   const dots = useMemo(() => '●'.repeat(value.length), [value]);
   return (
-    <div className="col">
-      {hint ? <div className="small muted">{hint}</div> : null}
-      <div className="center mono" style={{ minHeight: 32, fontSize: '1.4rem', letterSpacing: 6 }}>
-        {dots || ' '}
-      </div>
+    <div className="pinpad">
+      {hint ? <div className="pin-hint">{hint}</div> : null}
+      {/* 未输入时也要占位，否则按下第一个数字整行会往下跳 */}
+      <div className="pin-dots">{dots || <span className="pin-dots-empty">未输入</span>}</div>
       {error ? <div className="notice danger">{error}</div> : null}
-      <div className="grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
+      <div className="pin-keys">
         {KEYS.map((k) => (
-          <button key={k} onClick={() => press(k)}>
+          <button
+            key={k}
+            className={FN_KEYS.has(k) ? 'pin-fn' : 'pin-digit'}
+            onClick={() => press(k)}
+            aria-label={k === '清空' ? '清空' : k === '删除' ? '删除一位' : undefined}
+          >
             {k}
           </button>
         ))}
       </div>
-      <div className="row">
+      <div className="pin-actions">
         <button className="primary block" disabled={value.length < 4} onClick={() => onSubmit(value)}>
           确认
         </button>
@@ -269,5 +362,71 @@ export function PinPad({
         ) : null}
       </div>
     </div>
+  );
+}
+
+/**
+ * 设置新 PIN：连输两遍。
+ *
+ * 为什么要两遍：PIN 只有 4–8 位数字，按错一位不会当场发现，代价是
+ * 「下次自己也进不去」—— 而这正是需要走恢复流程的唯一原因。
+ * 设置时多按一遍，比事后找恢复入口便宜得多。
+ *
+ * 两遍不一致时整段退回第一遍，不保留上一遍的值：否则用户会以为
+ * 「第二遍输错了，那我改第二遍就行」，实际第一遍才是要改的那个。
+ */
+export function SetPinFlow({
+  onSubmit,
+  onCancel,
+  hint,
+  firstHint,
+  secondHint
+}: {
+  onSubmit: (pin: string) => void | Promise<void>;
+  onCancel?: () => void;
+  hint?: string;
+  firstHint?: string;
+  secondHint?: string;
+}) {
+  const [first, setFirst] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  // key 必须不同：两个分支渲染的都是 <PinPad>，React 会复用同一个实例，
+  // 于是 PinPad 内部的 useState('') 不会重置 —— 第二遍会带着第一遍已经
+  // 打好的四个点，用户再按一下就变成八位。加 key 强制卸载重建。
+  if (first === null) {
+    return (
+      <PinPad
+        key="first"
+        hint={firstHint ?? hint ?? '输入新的 4 到 8 位数字'}
+        error={error}
+        onCancel={onCancel}
+        onSubmit={(v) => {
+          setError(null);
+          setFirst(v);
+        }}
+      />
+    );
+  }
+
+  return (
+    <PinPad
+      key="second"
+      hint={secondHint ?? '再输入一遍，确认没有按错'}
+      error={error}
+      onCancel={() => {
+        setFirst(null);
+        setError(null);
+      }}
+      onSubmit={async (v) => {
+        if (v !== first) {
+          setFirst(null);
+          setError('两次输入不一致，请重新设置');
+          return;
+        }
+        setError(null);
+        await onSubmit(v);
+      }}
+    />
   );
 }

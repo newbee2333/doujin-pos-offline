@@ -18,7 +18,7 @@ export default function HelpPage() {
         </button>
         <span className="title">使用说明书</span>
       </div>
-      <div className="content">
+      <div className="page">
         <div
           className="manual"
           // 内容来自构建期对自家 README 的转换，不含任何用户输入

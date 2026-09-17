@@ -34,13 +34,27 @@ export function minorToInput(minor: number, currency: Currency): string {
   return `${sign}${Math.floor(abs / 100)}.${String(abs % 100).padStart(2, '0')}`;
 }
 
-/** 展示用金额。必须显示币种，不能只显示 ¥。 */
-export function formatMoney(minor: number, currency: Currency): string {
-  const symbol = currency === 'CNY' ? '¥' : '¥';
-  if (currency === 'JPY') return `${symbol}${groupDigits(minor)} JPY`;
+/**
+ * 只格式化数字部分（带 ¥ 符号），不带币种代码。
+ *
+ * 给「币种在同一个页面上已经显著写过一次」的地方用 —— 目前只有游客菜单卡片：
+ * 一屏六张卡各重复一遍 CNY 是纯噪音，而卡片上又要塞下「金额 + 加购按钮」一行，
+ * 那 30px 就是压垮它的最后一根稻草。菜单页顶部写明币种，卡片只留 ¥120.00。
+ *
+ * ⚠️ 除此之外一律用 formatMoney —— ¥ 同时是人民币和日元的符号，
+ * 单看一个 ¥120.00 分不出是哪一种。
+ */
+export function formatAmountOnly(minor: number, currency: Currency): string {
+  const symbol = '¥';
+  if (currency === 'JPY') return `${symbol}${groupDigits(minor)}`;
   const sign = minor < 0 ? '-' : '';
   const abs = Math.abs(minor);
-  return `${sign}${symbol}${groupDigits(Math.floor(abs / 100))}.${String(abs % 100).padStart(2, '0')} CNY`;
+  return `${sign}${symbol}${groupDigits(Math.floor(abs / 100))}.${String(abs % 100).padStart(2, '0')}`;
+}
+
+/** 展示用金额。必须显示币种，不能只显示 ¥。 */
+export function formatMoney(minor: number, currency: Currency): string {
+  return `${formatAmountOnly(minor, currency)} ${currency}`;
 }
 
 function groupDigits(n: number): string {

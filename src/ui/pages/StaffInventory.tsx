@@ -34,7 +34,7 @@ export default function StaffInventoryPage() {
   }
 
   return (
-    <div className="content">
+    <div className="page">
       <div className="row">
         <h1 style={{ margin: 0 }}>库存与流水</h1>
         <span className="spacer" />
