@@ -1856,3 +1856,22 @@ table.zebra tbody tr:nth-child(odd) { background: var(--surface-2); }
   /* 旧名 --radius / --radius-card 已经没有规则引用，三个都删掉了。
      最后一处是 .card 的 border-radius，本轮改成 --r-lg —— 留着别名只会让人
      以为「改这里能一次改掉所有卡片」，实际只有 .card 一处跟着变。 */
+
+/* 主屏幕应用铺满屏幕时，为系统状态栏留出安全区域。
+   竖屏由横向导航承接一次顶部间距；嵌入式菜单预览不继承屏幕安全区域。
+   桌面环境的安全区域为零，保持原布局。 */
+:root {
+  --screen-top: env(safe-area-inset-top, 0px);
+}
+.sidebar {
+  padding-top: calc(var(--sp-2) + var(--screen-top));
+}
+.topbar {
+  padding-top: calc(10px + var(--screen-top));
+}
+.app-kiosk .kiosk-header {
+  padding-top: calc(14px + var(--screen-top));
+}
+@media (max-width: 820px) {
+  .app-backend .topbar { padding-top: 10px; }
+}
