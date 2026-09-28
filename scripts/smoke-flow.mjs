@@ -23,6 +23,14 @@ const browser = await chromium.launch({
 });
 const ctx = await browser.newContext();
 ctx.on('dialog', (d) => d.accept());
+// Opt-in layout simulation; this does not emulate iPadOS compositing.
+if (process.env.SMOKE_STANDALONE === '1') {
+  await ctx.addInitScript(() => {
+    const supports = CSS.supports.bind(CSS);
+    CSS.supports = (...args) => args[0] === '-webkit-touch-callout' ? true : supports(...args);
+    Object.defineProperty(navigator, 'standalone', { value: true });
+  });
+}
 const page = await ctx.newPage();
 page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
 page.on('console', (m) => {

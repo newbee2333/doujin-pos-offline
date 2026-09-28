@@ -41,8 +41,7 @@ async function setupPwa() {
   }
 }
 
-// Installed Apple web apps can blur beyond the reported safe-area inset.
-// Keep the entire scrolling surface below that system-owned region.
+// Installed Apple web apps use an opaque, stationary header and inner scrolling.
 const appleStandalone = CSS.supports('-webkit-touch-callout', 'none') && (
   window.matchMedia('(display-mode: standalone)').matches ||
   (navigator as Navigator & { standalone?: boolean }).standalone === true

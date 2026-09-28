@@ -1876,32 +1876,52 @@ table.zebra tbody tr:nth-child(odd) { background: var(--surface-2); }
   .app-backend .topbar { padding-top: 10px; }
 }
 
-/* iPad 主屏幕实机上，系统渐变模糊超过 env() 报告的状态栏高度。
-   72px 是根据反馈截图选择的保守避让值，不宣称是系统的固定尺寸。
-   将滚动面本身裁到保护带下方，不能仅加 padding（滚动后仍会穿过）。
-   只由 main.tsx 在 Apple 独立应用模式启用；普通浏览器保持原布局。 */
+/* Apple 主屏幕应用使用固定实色外壳：顶部控件不参与正文滚动。
+   只保留系统报告的安全区域，不再用 72px 空白躲避系统效果。
+   正文的滚动容器有实际高度约束，内部 sticky 报表侧栏仍可工作。 */
 html.standalone-safe-frame {
-  --app-chrome-clearance: max(72px, env(safe-area-inset-top, 0px));
-  --screen-top: 0px; /* 安全区域已由外层一次性承接 */
+  --app-chrome-clearance: env(safe-area-inset-top, 0px);
+  --screen-top: 0px;
   background: var(--surface);
 }
-.standalone-safe-frame body {
-  overflow: hidden;
-  background: var(--surface);
-}
+.standalone-safe-frame body { overflow: hidden; background: var(--surface); }
 .standalone-safe-frame #root {
   position: fixed;
   inset: var(--app-chrome-clearance) 0 0;
   height: auto;
-  overflow: auto;
-  overscroll-behavior-y: none;
-  /* 同时约束弹窗和底部固定按钮，避免它们越过滚动面的边界。 */
+  overflow: auto; /* 首次建库、错误页仍允许滚动 */
   contain: layout paint;
-  background: var(--bg);
+  background: var(--surface);
 }
-.standalone-safe-frame .sidebar {
-  height: calc(100vh - var(--app-chrome-clearance));
-  height: calc(100dvh - var(--app-chrome-clearance));
+.standalone-safe-frame .app { height: 100%; min-height: 0; overflow: hidden; }
+.standalone-safe-frame .app > .main { overflow: hidden; }
+.standalone-safe-frame .sidebar { height: 100%; }
+.standalone-safe-frame .topbar { flex-shrink: 0; background: var(--surface); }
+.standalone-safe-frame .main > .content,
+.standalone-safe-frame .main > .kiosk-route {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior-y: contain;
+}
+/* 菜单栏与商品网格是两个独立区域；搜索和分类不会随商品滚走。 */
+.standalone-safe-frame .main > .kiosk-menu-route { overflow: hidden; }
+.standalone-safe-frame .kiosk-menu-route > .kiosk { height: 100%; min-height: 0; }
+.standalone-safe-frame .kiosk-menu-route .kiosk-hero {
+  flex: none;
+  position: relative;
+  border-radius: 0;
+  box-shadow: none;
+  border-bottom: 1px solid var(--line);
+  padding: 10px var(--sp-4);
+}
+.standalone-safe-frame .kiosk-menu-route .notice { flex-shrink: 0; }
+.standalone-safe-frame .kiosk-menu-route .menu-grid {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  align-content: start;
 }
 .standalone-safe-frame .modal {
   max-height: calc(100dvh - var(--app-chrome-clearance) - 32px);
