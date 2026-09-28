@@ -41,6 +41,15 @@ async function setupPwa() {
   }
 }
 
+// Installed Apple web apps can blur beyond the reported safe-area inset.
+// Keep the entire scrolling surface below that system-owned region.
+const appleStandalone = CSS.supports('-webkit-touch-callout', 'none') && (
+  window.matchMedia('(display-mode: standalone)').matches ||
+  (navigator as Navigator & { standalone?: boolean }).standalone === true
+);
+document.documentElement.classList.toggle('standalone-safe-frame', appleStandalone);
+
+
 void setupPwa();
 
 // 不使用 StrictMode：启动阶段会重复执行 Effect，导致 Web Locks 所有权被自己占用

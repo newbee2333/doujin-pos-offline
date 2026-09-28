@@ -1875,3 +1875,37 @@ table.zebra tbody tr:nth-child(odd) { background: var(--surface-2); }
 @media (max-width: 820px) {
   .app-backend .topbar { padding-top: 10px; }
 }
+
+/* iPad 主屏幕实机上，系统渐变模糊超过 env() 报告的状态栏高度。
+   72px 是根据反馈截图选择的保守避让值，不宣称是系统的固定尺寸。
+   将滚动面本身裁到保护带下方，不能仅加 padding（滚动后仍会穿过）。
+   只由 main.tsx 在 Apple 独立应用模式启用；普通浏览器保持原布局。 */
+html.standalone-safe-frame {
+  --app-chrome-clearance: max(72px, env(safe-area-inset-top, 0px));
+  --screen-top: 0px; /* 安全区域已由外层一次性承接 */
+  background: var(--surface);
+}
+.standalone-safe-frame body {
+  overflow: hidden;
+  background: var(--surface);
+}
+.standalone-safe-frame #root {
+  position: fixed;
+  inset: var(--app-chrome-clearance) 0 0;
+  height: auto;
+  overflow: auto;
+  overscroll-behavior-y: none;
+  /* 同时约束弹窗和底部固定按钮，避免它们越过滚动面的边界。 */
+  contain: layout paint;
+  background: var(--bg);
+}
+.standalone-safe-frame .sidebar {
+  height: calc(100vh - var(--app-chrome-clearance));
+  height: calc(100dvh - var(--app-chrome-clearance));
+}
+.standalone-safe-frame .modal {
+  max-height: calc(100dvh - var(--app-chrome-clearance) - 32px);
+}
+@media (max-width: 820px) {
+  .standalone-safe-frame .sidebar { height: auto; }
+}
