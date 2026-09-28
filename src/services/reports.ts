@@ -88,26 +88,22 @@ export interface PaymentSummaryRow {
 
 export function getPaymentSummary(eventId: string): Promise<PaymentSummaryRow[]> {
   return ex().read<PaymentSummaryRow>(
-    `SELECT m.name AS method_name, m.type AS method_type,
-            COALESCE(recv.amount, 0) AS received_minor,
-            COALESCE(rf.amount, 0) AS refunded_minor,
-            COALESCE(recv.amount, 0) - COALESCE(rf.amount, 0) AS net_minor,
-            COALESCE(recv.cnt, 0) AS order_count
-     FROM payment_methods m
-     LEFT JOIN (
-       SELECT p.method_name_snapshot AS name, SUM(p.amount_minor) AS amount, COUNT(*) AS cnt
+    `SELECT method_name, method_type, SUM(received) AS received_minor,
+            SUM(refunded) AS refunded_minor, SUM(received-refunded) AS net_minor,
+            SUM(cnt) AS order_count
+     FROM (
+       SELECT p.method_name_snapshot AS method_name, p.method_type_snapshot AS method_type,
+              p.amount_minor AS received, 0 AS refunded, 1 AS cnt
        FROM payments p JOIN orders o ON o.id = p.order_id
        WHERE o.event_id = ? AND o.status IN ${SALES_STATUSES}
-       GROUP BY p.method_name_snapshot
-     ) recv ON recv.name = m.name
-     LEFT JOIN (
-       SELECT r.method_name_snapshot AS name, SUM(r.amount_minor) AS amount
+       UNION ALL
+       SELECT r.method_name_snapshot, r.method_type_snapshot, 0, r.amount_minor, 0
        FROM refunds r JOIN orders o ON o.id = r.order_id
        WHERE o.event_id = ?
-       GROUP BY r.method_name_snapshot
-     ) rf ON rf.name = m.name
-     WHERE COALESCE(recv.amount, 0) <> 0 OR COALESCE(rf.amount, 0) <> 0
-     ORDER BY received_minor DESC`,
+     )
+     GROUP BY method_name, method_type
+     HAVING SUM(received) <> 0 OR SUM(refunded) <> 0
+     ORDER BY received_minor DESC, method_name`,
     [eventId, eventId]
   );
 }
