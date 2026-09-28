@@ -41,6 +41,14 @@ async function setupPwa() {
   }
 }
 
+// Installed Apple web apps use an opaque, stationary header and inner scrolling.
+const appleStandalone = CSS.supports('-webkit-touch-callout', 'none') && (
+  window.matchMedia('(display-mode: standalone)').matches ||
+  (navigator as Navigator & { standalone?: boolean }).standalone === true
+);
+document.documentElement.classList.toggle('standalone-safe-frame', appleStandalone);
+
+
 void setupPwa();
 
 // 不使用 StrictMode：启动阶段会重复执行 Effect，导致 Web Locks 所有权被自己占用

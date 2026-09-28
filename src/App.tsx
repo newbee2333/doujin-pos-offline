@@ -393,7 +393,7 @@ function Shell() {
             </button>
           </div>
         ) : null}
-        <div className={isKiosk ? '' : 'content'}>
+        <div className={isKiosk ? "kiosk-route" + (location.pathname === '/kiosk' ? ' kiosk-menu-route' : '') : 'content'}>
           {/* 只在后台显示：游客付款过程中不弹后台信息 */}
           {!isKiosk ? <BackupNudge /> : null}
           <Routes>
