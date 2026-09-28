@@ -1,12 +1,7 @@
+import ReportExport from '../ReportExport';
 import { useState } from 'react';
 import {
   addCashMovement,
-  exportInventoryCsv,
-  exportInventoryTransactionsCsv,
-  exportOrderItemsCsv,
-  exportOrdersCsv,
-  exportPaymentSummaryCsv,
-  exportProductSalesCsv,
   getDashboard,
   getExpectedCash,
   getInventoryConsumption,
@@ -29,17 +24,6 @@ const MOVEMENT_LABEL: Record<string, string> = {
   withdrawal: '取出'
 };
 
-function downloadCsv(name: string, content: string) {
-  const blob = new Blob([content], { type: 'text/csv;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = name;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 20000);
-}
 
 export default function StaffReportsPage() {
   const eventId = useApp((s) => s.currentEventId);
@@ -258,46 +242,7 @@ export default function StaffReportsPage() {
             </div>
           ) : null}
 
-          <div className="card">
-            <h2>导出 CSV</h2>
-            <p className="tiny muted">
-              CSV 仅供分析，不能作为完整恢复格式。完整备份请使用「备份恢复」导出 SQLite。
-            </p>
-            <div className="row">
-              <button className="small" onClick={async () => downloadCsv('orders.csv', await exportOrdersCsv(eventId))}>
-                订单
-              </button>
-              <button
-                className="small"
-                onClick={async () => downloadCsv('order-items.csv', await exportOrderItemsCsv(eventId))}
-              >
-                订单明细
-              </button>
-              <button className="small" onClick={async () => downloadCsv('inventory.csv', await exportInventoryCsv(eventId))}>
-                库存
-              </button>
-              <button
-                className="small"
-                onClick={async () =>
-                  downloadCsv('inventory-transactions.csv', await exportInventoryTransactionsCsv(eventId))
-                }
-              >
-                库存流水
-              </button>
-              <button
-                className="small"
-                onClick={async () => downloadCsv('product-sales.csv', await exportProductSalesCsv(eventId))}
-              >
-                商品销售汇总
-              </button>
-              <button
-                className="small"
-                onClick={async () => downloadCsv('payment-summary.csv', await exportPaymentSummaryCsv(eventId))}
-              >
-                付款汇总
-              </button>
-            </div>
-          </div>
+          <ReportExport eventId={eventId} eventName={event.data?.name ?? '展会'} />
         </div>
 
         {/* 收摊独立成右栏。它是「收摊时才走一遍」的流程，混在报表长表里

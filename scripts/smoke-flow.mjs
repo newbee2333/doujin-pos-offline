@@ -261,6 +261,28 @@ try {
   const reloaded = await page.evaluate(() => document.body.innerText);
   if (reloaded.includes('冒烟本')) ok('刷新后数据保留');
   else fail('刷新后数据保留', reloaded.slice(0, 200));
+
+  if (process.env.SMOKE_REPORT_EXPORT === '1') {
+    await gotoStaff('staff/reports');
+    await page.evaluate(() => navigator.serviceWorker.ready.then(() => true));
+    await ctx.setOffline(true);
+    const downloadPromise = page.waitForEvent('download');
+    await page.getByRole('button', { name: '导出 Excel 营业报表', exact: true }).click();
+    const download = await downloadPromise;
+    const { default: ExcelJS } = await import('exceljs');
+    const book = new ExcelJS.Workbook();
+    await book.xlsx.readFile(await download.path());
+    if (book.worksheets.length !== 8 || book.worksheets[0].name !== '营业总览') throw new Error('Excel 工作表不完整');
+    if (!(book.worksheets[0].getCell('B7').value > 0)) throw new Error('Excel 销售额缺失');
+    ok('断网后首次导出 Excel，8 张工作表可读取', download.suggestedFilename());
+    await page.getByText('更多导出：原始 CSV', { exact: true }).click();
+    const csvPromise = page.waitForEvent('download');
+    await page.getByRole('button', { name: '导出所选 CSV' }).click();
+    const csv = await csvPromise;
+    if (!csv.suggestedFilename().endsWith('.csv')) throw new Error('CSV 下载失败');
+    ok('原始 CSV 离线导出保留');
+    await ctx.setOffline(false);
+  }
 } catch (e) {
   fail('执行异常', e.message);
 }
