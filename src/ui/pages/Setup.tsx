@@ -2,12 +2,14 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   commitImport,
+  getBackupState,
   getCurrentEventId,
   stageImport,
   type ReplacePreview
 } from '../../services/system';
 import { errorMessage, openDatabase, resetDatabaseBinding, useApp } from '../../store';
-import { ErrorBox, Spinner } from '../components';
+import SaveDatabase from '../SaveDatabase';
+import { ErrorBox, Spinner, useAsync } from '../components';
 import { formatBytes } from '../../domain/image';
 import { importFileAccept, importFileHint } from '../file-accept';
 
@@ -24,6 +26,9 @@ export default function SetupPage({
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<ReplacePreview | null>(null);
   const [fileName, setFileName] = useState('');
+  /** 只有「从文件恢复」这条路径上有值得保存的库；首次启动是空的，不问。 */
+  const backup = useAsync(() => (firstLaunch ? Promise.resolve(null) : getBackupState()), []);
+  const savedAt = backup.data?.lastConfirmedSavedAt ?? null;
 
   async function onFile(file: File) {
     setBusy(true);
@@ -81,7 +86,9 @@ export default function SetupPage({
         <div className="col" style={{ marginTop: 14 }}>
           <div className="notice info">
             <strong>整库替换</strong>：导入会用文件完整替换当前数据库，不合并任何本地修改。
-            覆盖前会自动保留可恢复的旧副本，但仍建议先导出一份备份保存到设备外。
+            {firstLaunch
+              ? '这里还是空的，直接选文件即可。'
+              : '旧库文件会留在设备上，但界面上没有入口能打开它——先导出一份备份，再替换。'}
           </div>
 
           <label className="field">
@@ -156,6 +163,13 @@ export default function SetupPage({
                   该文件来自旧 schema {preview.candidate.migratedFrom}，已迁移到当前版本。
                 </div>
               ) : null}
+
+              {/* 和「新建空数据库」的确认面板对称：这是最后一个能回头的地方，
+                  保存入口就摆在这儿，不用退回上一页去导。 */}
+              {firstLaunch ? null : (
+                <SaveDatabase reloadKey={savedAt} onSaved={() => backup.reload()} />
+              )}
+
               <div className="row" style={{ marginTop: 12 }}>
                 <button className="danger" onClick={doCommit} disabled={busy}>
                   确认替换

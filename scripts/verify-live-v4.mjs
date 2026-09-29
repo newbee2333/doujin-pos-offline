@@ -87,6 +87,10 @@ const contentRows = [
     code.includes('能把你带回来的只有你自己导出的那份文件')],
   ['手册已写入 清空重来 一节',
     code.includes('想清空重来') && code.includes('唯一会丢掉营业数据的操作')],
+  // 两条整库级路径（从文件恢复 / 新建空数据库）里都内嵌了「保存当前数据库」。
+  // 组件默认文案与卡片标题都是这个字符串，恢复那张卡新增的提醒也一并断言。
+  ['破坏性流程前内嵌 保存当前数据库 入口',
+    code.includes('保存当前数据库') && code.includes('恢复之后回不去')],
   ['overflow-x: clip（粘性修复）', /overflow-x:\s*clip/.test(style)],
   ['容器查询 container-type', /container-type:\s*inline-size/.test(style)],
   ['避免 dvh 回退 vh', style.includes('100dvh')],

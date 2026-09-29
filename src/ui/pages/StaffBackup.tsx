@@ -3,17 +3,13 @@ import { useNavigate } from 'react-router-dom';
 import { db } from '../../db/client';
 import {
   createEmptyDatabase,
-  exportDatabase,
   getBackupState,
   getCurrentEventId,
-  markConfirmedSaved,
-  previewNewDatabase,
-  shareBytes,
-  suggestFileName
+  previewNewDatabase
 } from '../../services/system';
 import { getEvent } from '../../services/events';
-import { formatBytes } from '../../domain/image';
 import { errorMessage, openDatabase, resetDatabaseBinding, useApp } from '../../store';
+import SaveDatabase from '../SaveDatabase';
 import SetupPage from './Setup';
 import { ErrorBox, Spinner, useAsync } from '../components';
 
@@ -24,8 +20,6 @@ export default function StaffBackupPage() {
   const showToast = useApp((s) => s.showToast);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [lastBytes, setLastBytes] = useState<Uint8Array | null>(null);
-  const [lastFile, setLastFile] = useState('');
   const [showImport, setShowImport] = useState(false);
   const [showNew, setShowNew] = useState(false);
   const [ackSaved, setAckSaved] = useState(false);
@@ -39,22 +33,6 @@ export default function StaffBackupPage() {
   if (showImport) return <SetupPage onDone={() => setShowImport(false)} />;
 
   const savedAt = backup.data?.lastConfirmedSavedAt ?? null;
-
-  async function doExport() {
-    setBusy(true);
-    setError(null);
-    try {
-      const name = suggestFileName(event.data?.name);
-      const { bytes, mode } = await exportDatabase(name);
-      setLastBytes(bytes);
-      setLastFile(name);
-      showToast(mode === 'picker' ? '已保存到你选择的位置' : '已发起下载');
-    } catch (e) {
-      setError(errorMessage(e));
-    } finally {
-      setBusy(false);
-    }
-  }
 
   async function doNewDatabase() {
     setBusy(true);
@@ -86,47 +64,22 @@ export default function StaffBackupPage() {
       <h1>备份与恢复</h1>
 
       <div className="card">
-        <h2>导出完整数据库</h2>
+        <h2>保存当前数据库</h2>
         <p className="small muted">
           导出为标准 SQLite 文件，包含商品、图片、收款码、展会配置、库存、订单、收款、退款、纠错与现金流水。
           导出时会暂停新的写入并等待当前事务完成，生成一致快照。
         </p>
-        <div className="row">
-          <button className="primary" onClick={doExport} disabled={busy}>
-            {busy ? <span className="spinner" /> : null}
-            导出 SQLite
-          </button>
-          {lastBytes ? (
-            <>
-              <button
-                onClick={async () => {
-                  if (await shareBytes(lastBytes, lastFile)) showToast('已调用系统分享');
-                  else showToast('当前浏览器不支持文件分享，请用导出保存到「文件」');
-                }}
-              >
-                分享 / 保存到文件
-              </button>
-              <button
-                onClick={async () => {
-                  await markConfirmedSaved();
-                  showToast('已确认保存');
-                  backup.reload();
-                  // 下面「新建空数据库」的提醒强度取决于这个时间戳，一起刷新。
-                  nudge.reload();
-                }}
-              >
-                我确认已保存
-              </button>
-            </>
-          ) : null}
-        </div>
-        {lastBytes ? (
-          <p className="tiny muted" style={{ marginBottom: 0 }}>
-            已生成 {lastFile}（{formatBytes(lastBytes.length)}）。浏览器发起下载不等于文件一定落盘成功，
-            请在平板的「文件」里确认后再点「我确认已保存」。
-          </p>
-        ) : null}
-        <ErrorBox message={error} />
+        {/* 按钮文案是「导出 SQLite」而不是卡片标题：几个验收脚本和 CI 按这个取按钮。 */}
+        <SaveDatabase
+          eventName={event.data?.name}
+          label="导出 SQLite"
+          reloadKey={savedAt}
+          onSaved={() => {
+            backup.reload();
+            // 下面两张卡的提醒强度取决于这个时间戳，一起刷新。
+            nudge.reload();
+          }}
+        />
       </div>
 
       <div className="card">
@@ -166,9 +119,28 @@ export default function StaffBackupPage() {
       <div className="card">
         <h2>从文件恢复</h2>
         <p className="small muted">
-          恢复是整库替换，不合并本地修改。覆盖前会保留可恢复的旧副本，但仍建议先导出当前数据。
+          恢复是整库替换，不合并本地修改。旧库文件会留在设备上，但界面上没有入口能打开它。
         </p>
-        <button onClick={() => setShowImport(true)}>选择 SQLite 文件恢复</button>
+
+        {savedAt ? null : (
+          <div className="notice danger">
+            <strong>恢复之后回不去。</strong>
+            现在这个库在界面上就再也打不开了——先在上面保存一份，再往下走。
+          </div>
+        )}
+
+        <SaveDatabase
+          eventName={event.data?.name}
+          reloadKey={savedAt}
+          onSaved={() => {
+            backup.reload();
+            nudge.reload();
+          }}
+        />
+
+        <div className="row" style={{ marginTop: 12 }}>
+          <button onClick={() => setShowImport(true)}>选择 SQLite 文件恢复</button>
+        </div>
       </div>
 
       {/* 放在最后：它是这个页面上唯一会丢营业数据的动作，不该摆在「导出」旁边顺手就点到。 */}
@@ -236,6 +208,16 @@ export default function StaffBackupPage() {
               新库会带着默认的菜单分类与支付方式，从零开始。旧库不会立刻从设备上抹掉，
               但没有任何入口能打开它——所以别把它当备份。
             </p>
+
+            {/* 现场就是这个顺序：先导出一份 → 在「文件」里确认 → 再勾下面那两句话。 */}
+            <SaveDatabase
+              eventName={event.data?.name}
+              reloadKey={savedAt}
+              onSaved={() => {
+                backup.reload();
+                nudge.reload();
+              }}
+            />
 
             <label className="check">
               <input type="checkbox" checked={ackSaved} onChange={(e) => setAckSaved(e.target.checked)} />

@@ -11,9 +11,11 @@
  * 2. 真的新建：换成新库、旧数据一个不留
  * 3. 新库结构完好、带着默认菜单分类与支付方式，而且能继续写
  * 4. 确认保存过之后提醒降档，并只留一道勾选
+ * 5. 备份页两处破坏性入口内部都内嵌了「保存当前数据库」，且排在破坏性按钮之前
+ * 6. 导入的「确认替换」面板里同样有，同样排在「确认替换」之前
  *
  * ⚠️ 顺序有约束：第 2 节会把库换掉，所以第 1 节必须在它前面，
- * 第 3/4 节又必须在第 2 节之后（要在新库上跑）。
+ * 第 3/4/5/6 节又必须在第 2 节之后（要在新库上跑）；第 6 节还要用第 4 节导出的文件。
  */
 import { chromium } from 'playwright';
 import { mkdirSync } from 'node:fs';
@@ -85,6 +87,23 @@ const field = (label) => page.locator('.modal label.field').filter({ hasText: ne
 const newDbPanel = () => page.locator('.card').filter({ hasText: '确认新建' }).last();
 const newDbButton = () => page.getByRole('button', { name: '新建空数据库', exact: true });
 const confirmNewButton = () => page.getByRole('button', { name: '确认新建', exact: true });
+const importCard = () => page.locator('.card').filter({ hasText: '从文件恢复' }).first();
+
+/**
+ * 「保存当前数据库」这个块在容器里是否排在目标元素之前 —— 用 DOM 顺序判定，
+ * 不看视觉位置（后端页面是单列布局，两者一致）。
+ * target 传选择器（如 '.check'）或按钮文案。
+ */
+function saveBlockBefore(container, target) {
+  return container.evaluate((el, t) => {
+    const save = el.querySelector('.save-db');
+    const node = t.startsWith('.')
+      ? el.querySelector(t)
+      : [...el.querySelectorAll('button')].find((b) => b.textContent.trim() === t);
+    if (!save || !node) return false;
+    return (save.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+  }, target);
+}
 
 const dbStatusCard = () => page.locator('.card').filter({ hasText: '数据库状态' }).first();
 /** 数据集标识是 UUID，从整张卡的文本里捞出来。 */
@@ -146,6 +165,29 @@ check('点开后出现「确认新建」面板', (await newDbPanel().count()) > 
 const panelText = await newDbPanel().innerText();
 check('面板列出即将丢下的展会数', /展会\s*1\s*场/.test(panelText), panelText.replace(/\s+/g, ' ').slice(0, 80) + '…');
 check('面板说明旧库没有入口能打开', panelText.includes('别把它当备份'));
+
+// 现场顺序：导出一份 → 在「文件」里确认 → 再勾下面那两句。所以保存块要排在勾选之前。
+check(
+  '确认新建面板里内嵌了「保存当前数据库」',
+  (await newDbPanel().getByRole('button', { name: '保存当前数据库' }).count()) === 1
+);
+check('保存入口排在勾选项之前', await saveBlockBefore(newDbPanel(), '.check'));
+
+// 「从文件恢复」是另一条整库级路径，同一套提醒与同一个保存入口。
+const importText = (await importCard().innerText()).replace(/\s+/g, ' ');
+check(
+  '从未确认保存时，从文件恢复也按危险档提醒',
+  importText.includes('恢复之后回不去'),
+  importText.slice(0, 60) + '…'
+);
+check(
+  '从文件恢复卡里内嵌了「保存当前数据库」',
+  (await importCard().getByRole('button', { name: '保存当前数据库' }).count()) === 1
+);
+check(
+  '保存入口排在「选择 SQLite 文件恢复」之前',
+  await saveBlockBefore(importCard(), '选择 SQLite 文件恢复')
+);
 
 const ackSaved = newDbPanel().locator('label.check').filter({ hasText: '保存到这台设备之外' }).locator('input');
 const ackLost = newDbPanel().locator('label.check').filter({ hasText: '将无法找回' }).locator('input');
@@ -265,6 +307,45 @@ await shot('ui11-2-new-db-after-backup');
 await page.getByRole('button', { name: '取消' }).click();
 await page.waitForTimeout(400);
 check('取消后面板收起', (await newDbPanel().count()) === 0);
+
+// ───────── 5. 确认保存之后，另外两处入口的提示要跟着变
+// 同一页上挂着三份「保存当前数据库」，各有各的 useState。「我确认已保存」只写库里的
+// 时间戳，另外两份自己不重新拉就会一直停在旧文案 —— 父级把时间戳当依赖传下去才刷新。
+const importText2 = (await importCard().innerText()).replace(/\s+/g, ' ');
+check(
+  '从文件恢复的危险档提醒随确认保存消失',
+  !importText2.includes('恢复之后回不去'),
+  importText2.slice(0, 60) + '…'
+);
+check('从文件恢复的保存入口改说「最近确认保存」', /最近确认保存：/.test(importText2));
+await shot('ui11-3-save-entry-after-backup');
+
+// ───────── 6. 「确认替换」面板 —— 导入真正的提交点
+// 用第 4 节导出的那份文件把面板顶出来。它是这个空库自己的导出，文件头能过校验。
+const selfDump = `${OUT}/ui11-self-export.sqlite3`;
+let staged = false;
+if (download) {
+  await download.saveAs(selfDump);
+  await page.getByRole('button', { name: '选择 SQLite 文件恢复' }).click();
+  await page.waitForTimeout(700);
+  await page.locator('input[type="file"]').first().setInputFiles(selfDump);
+  await page.waitForTimeout(2800);
+  const replacePanel = page.locator('.card').filter({ hasText: '确认替换' }).last();
+  staged = (await replacePanel.count()) > 0;
+  check('选文件后出现「确认替换」面板', staged);
+  if (staged) {
+    check(
+      '确认替换面板里内嵌了「保存当前数据库」',
+      (await replacePanel.getByRole('button', { name: '保存当前数据库' }).count()) === 1
+    );
+    check('保存入口排在「确认替换」之前', await saveBlockBefore(replacePanel, '确认替换'));
+    await shot('ui11-4-import-confirm-save');
+    await page.getByRole('button', { name: '取消' }).click();
+    await page.waitForTimeout(400);
+  }
+} else {
+  check('导入确认面板（需要第 4 节的导出文件）', false, '没有 download，跳过这一节');
+}
 
 console.log(`\n合计 ${pass} 通过 / ${fail} 失败`);
 console.log('控制台错误：', errors.length ? '\n  ' + errors.join('\n  ') : '（无）');

@@ -522,6 +522,11 @@ label.check input { width: 18px; height: 18px; min-height: 0; }
 .notice.ok { background: var(--ok-soft); color: var(--ok); border-color: #bbf7d0; }
 .notice.info { background: var(--surface-2); color: var(--ink-2); border-color: var(--line); }
 
+/* 「保存当前数据库」这一块（三条整库路径共用一份实现）。
+   它前面可能是一段说明或一条 .notice，后面可能是勾选项或恢复按钮，两边都不会自动留出距离
+   —— 卡片里没有通用的 `> * + *` 间距规则，所以这里的上下边距得自己写。 */
+.save-db { margin: var(--sp-3) 0; }
+
 table { width: 100%; border-collapse: collapse; font-size: var(--fs-small); }
 th, td { padding: var(--sp-2) 10px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
 th { font-weight: 600; color: var(--ink-2); background: var(--surface-2); position: sticky; top: 0; }
