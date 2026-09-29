@@ -79,6 +79,14 @@ const contentRows = [
   // 说明书新增的套装章节正文来自 README，同样按正文断言
   ['手册已写入 套装怎么配',
     code.includes('套装成分') && code.includes('套装自身不持有库存')],
+  // 备份页新增的「新建空数据库」。危险档那句提醒是这里的关键信息 ——
+  // 它必须跟着包一起上线，否则摊主会以为旧库还能从界面上找回来。
+  ['备份页有 新建空数据库 入口与二次确认',
+    code.includes('新建空数据库') && code.includes('确认新建')],
+  ['备份页讲清唯一归路是导出的文件',
+    code.includes('能把你带回来的只有你自己导出的那份文件')],
+  ['手册已写入 清空重来 一节',
+    code.includes('想清空重来') && code.includes('唯一会丢掉营业数据的操作')],
   ['overflow-x: clip（粘性修复）', /overflow-x:\s*clip/.test(style)],
   ['容器查询 container-type', /container-type:\s*inline-size/.test(style)],
   ['避免 dvh 回退 vh', style.includes('100dvh')],

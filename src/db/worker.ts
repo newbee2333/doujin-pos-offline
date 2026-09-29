@@ -28,7 +28,7 @@ let ready = false;
 
 interface Req {
   id: number;
-  cmd: 'init' | 'tx' | 'read' | 'export' | 'importStage' | 'importCommit' | 'status';
+  cmd: 'init' | 'tx' | 'read' | 'export' | 'importStage' | 'importCommit' | 'newStage' | 'status';
   slot?: Slot;
   steps?: Step[];
   sql?: string;
@@ -77,6 +77,9 @@ async function handle(req: Req): Promise<unknown> {
     case 'importCommit':
       ensureReady();
       return importCommit();
+    case 'newStage':
+      ensureReady();
+      return createEmptyStage();
     default:
       throw new Error(`未知的 Worker 命令：${(req as Req).cmd}`);
   }
@@ -290,6 +293,59 @@ export interface ImportSummary {
 
 let stagedSlot: Slot | null = null;
 
+/**
+ * 建一个全新的空库放到**非活动槽位**，等 importCommit 切过去。
+ *
+ * 刻意复用「导入」的那条切换路径，而不是原地清空当前库：
+ * 新库没建完 / 校验没过时，活动库一个字节都没动；真的崩在切换中途，
+ * 也能像导入一样回到一个完整有效的库。
+ *
+ * 建库方式是在内存库里跑同一份 `buildInitialSchemaSteps()`，再整体写进目标槽位。
+ * 不走「先删掉目标槽位的旧文件再新建」：那依赖 unlink 确实生效，
+ * 而 writeSlot 里的 importDb 是覆盖语义，目标槽位有没有旧文件都不影响结果。
+ */
+async function createEmptyStage(): Promise<ImportSummary> {
+  const target: Slot = activeSlot === 'a' ? 'b' : 'a';
+
+  const mem = new sqlite3.oo1.DB(':memory:');
+  let bytes: Uint8Array;
+  try {
+    mem.exec('PRAGMA foreign_keys = ON');
+    // application_id 存在文件头里，导入校验靠它认出「这是 Doujin POS 的库」。
+    mem.exec(`PRAGMA application_id = ${APPLICATION_ID}`);
+    execSteps(mem, buildInitialSchemaSteps());
+    const integrity = selectAll(mem, 'PRAGMA integrity_check');
+    if (String(integrity[0]?.integrity_check ?? '') !== 'ok') {
+      throw new Error('新建的空库没通过完整性检查');
+    }
+    bytes = sqlite3.capi.sqlite3_js_db_export(mem.pointer);
+    if (!bytes || !bytes.length) throw new Error('新建的空库导出为空');
+  } finally {
+    try {
+      mem.close();
+    } catch {
+      /* 忽略 */
+    }
+  }
+
+  await writeSlot(target, bytes);
+
+  const cand: any = new pool.OpfsSAHPoolDb(SLOT_PATH[target]);
+  try {
+    // 空库也要过一遍业务不变量：这一步同时验证「写进去的东西真的能打开」。
+    const problems = runInvariantChecks(cand);
+    if (problems.length) throw new Error(`新建的空库校验未通过：${problems.join('；')}`);
+    stagedSlot = target;
+    return buildSummary(cand, bytes.length, target);
+  } finally {
+    try {
+      cand.close();
+    } catch {
+      /* 忽略 */
+    }
+  }
+}
+
 async function importStage(bytes: Uint8Array): Promise<ImportSummary> {
   if (!bytes || bytes.length < 100) throw new Error('文件太小，不像一个 SQLite 数据库');
   const header = String.fromCharCode(...Array.from(bytes.slice(0, 15)));
@@ -429,6 +485,6 @@ async function importCommit(): Promise<{ slot: Slot; status: unknown }> {
     activeSlot = previous;
     db = new pool.OpfsSAHPoolDb(SLOT_PATH[previous]);
     db.exec('PRAGMA foreign_keys = ON');
-    throw new Error(`导入失败，已恢复到原数据库：${e instanceof Error ? e.message : String(e)}`);
+    throw new Error(`切换失败，已恢复到原数据库：${e instanceof Error ? e.message : String(e)}`);
   }
 }
