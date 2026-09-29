@@ -72,6 +72,25 @@ const contentRows = [
   ['设置页已无 库存展示 卡片（无旧描述）',
     !code.includes('是否在游客菜单显示精确库存')],
   ['手册已澄清 库存展示 不在设置里', code.includes('库存展示') && code.includes('不在这里')],
+  // 报表「库存」表新增的「在场状态」列。三档文案都是 report-format.ts 里的字符串常量，
+  // 打包后仍是字面量；实测它们落在主 chunk（reports.ts 会引到），所以按 code 断言。
+  ['报表库存表：在场状态 三档文案已上线',
+    code.includes('在场状态') && code.includes('仅作套装成分') && code.includes('已移出本场')],
+  // 说明书新增的套装章节正文来自 README，同样按正文断言
+  ['手册已写入 套装怎么配',
+    code.includes('套装成分') && code.includes('套装自身不持有库存')],
+  // 备份页新增的「新建空数据库」。危险档那句提醒是这里的关键信息 ——
+  // 它必须跟着包一起上线，否则摊主会以为旧库还能从界面上找回来。
+  ['备份页有 新建空数据库 入口与二次确认',
+    code.includes('新建空数据库') && code.includes('确认新建')],
+  ['备份页讲清唯一归路是导出的文件',
+    code.includes('能把你带回来的只有你自己导出的那份文件')],
+  ['手册已写入 清空重来 一节',
+    code.includes('想清空重来') && code.includes('唯一会丢掉营业数据的操作')],
+  // 两条整库级路径（从文件恢复 / 新建空数据库）里都内嵌了「保存当前数据库」。
+  // 组件默认文案与卡片标题都是这个字符串，恢复那张卡新增的提醒也一并断言。
+  ['破坏性流程前内嵌 保存当前数据库 入口',
+    code.includes('保存当前数据库') && code.includes('恢复之后回不去')],
   ['overflow-x: clip（粘性修复）', /overflow-x:\s*clip/.test(style)],
   ['容器查询 container-type', /container-type:\s*inline-size/.test(style)],
   ['避免 dvh 回退 vh', style.includes('100dvh')],

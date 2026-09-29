@@ -20,6 +20,10 @@ export default function PreviewPage() {
   const eventId = useApp((s) => s.currentEventId);
   const [frameIdx, setFrameIdx] = useState(0);
   const [keyword, setKeyword] = useState('');
+  // 分类胶囊必须是能点的 —— 预览的用处就是「按游客的方式翻一遍」，
+  // 只画出一排不可点的胶囊，摊主会以为是自己点错了。
+  // 选中态与过滤口径都跟游客菜单（KioskMenu）保持一致，别在这里再写一套。
+  const [category, setCategory] = useState('');
   const [cartCount, setCartCount] = useState(0);
 
   const menu = useAsync(() => (eventId ? getKioskMenu(eventId) : Promise.resolve([])), [eventId]);
@@ -28,10 +32,16 @@ export default function PreviewPage() {
 
   const filtered = useMemo(() => {
     const kw = keyword.trim().toLowerCase();
-    return (menu.data ?? []).filter((m) =>
-      !kw || `${m.product_name} ${m.variant_name} ${m.sku ?? ''}`.toLowerCase().includes(kw)
-    );
-  }, [menu.data, keyword]);
+    return (menu.data ?? []).filter((m) => {
+      if (category && m.category_id !== category) return false;
+      if (kw) {
+        // 搜索框写着「搜索商品名 / 分类」，就得真的能按分类搜 —— 游客菜单是这么做的。
+        const hay = `${m.product_name} ${m.variant_name} ${m.sku ?? ''} ${m.category_name ?? ''}`.toLowerCase();
+        if (!hay.includes(kw)) return false;
+      }
+      return true;
+    });
+  }, [menu.data, category, keyword]);
 
   if (!eventId) return <ErrorBox message="请先选择展会" />;
   if (menu.loading) {
@@ -88,11 +98,17 @@ export default function PreviewPage() {
           </div>
         </div>
         <div className="chip-row">
-          <span className="chip active">全部</span>
+          <button className={`chip ${category === '' ? 'active' : ''}`} onClick={() => setCategory('')}>
+            全部
+          </button>
           {cats.data?.map((c) => (
-            <span key={c.id} className="chip">
+            <button
+              key={c.id}
+              className={`chip ${category === c.id ? 'active' : ''}`}
+              onClick={() => setCategory(c.id)}
+            >
               {c.name}
-            </span>
+            </button>
           ))}
         </div>
         <div className="menu-grid">
@@ -105,6 +121,7 @@ export default function PreviewPage() {
                 onOpenDetail={() => {}}
               />
             ))}
+            {!filtered.length ? <p className="muted">没有找到商品。</p> : null}
         </div>
         <div className="cart-bar" style={{ position: 'sticky', bottom: 0 }}>
           <span className="count">{cartCount}</span>

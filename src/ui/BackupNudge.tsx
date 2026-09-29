@@ -55,7 +55,7 @@ export default function BackupNudge() {
       <span style={{ flex: 1 }}>
         {limited
           ? '受限营业模式下数据被回收的风险更高，距上次备份已超过 2 小时，建议现在导出一份。'
-          : '距上次备份已超过 2 小时，建议现在导出完整数据库。'}
+          : '距上次备份已超过 2 小时，建议现在保存当前数据库。'}
       </span>
       <button className="small primary" onClick={() => navigate('/staff/backup')}>
         立即导出

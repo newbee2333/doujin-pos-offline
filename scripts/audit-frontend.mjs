@@ -127,6 +127,21 @@ try {
 
     /* ---- 3. 对比度：把实际渲染出来的前景/背景色取出来算 ---- */
     const colors = await page.evaluate(() => {
+      // 透明背景不能用 backgroundColor 直接当底色：
+      // 它对透明元素返回 "rgba(0, 0, 0, 0)"，而正则是 /\d+/g，取出来是
+      // [0,0,0,0] —— 前三位拼成 #000000，于是「没有背景」被算成「纯黑背景」，
+      // 算出的对比度完全不对（.side-note 就因此长期报 4.41:1）。
+      // 正确做法是往上找第一个真正不透明的祖先，拿它的底色。
+      const opaqueBg = (el) => {
+        for (let node = el; node; node = node.parentElement) {
+          const c = getComputedStyle(node).backgroundColor;
+          const m = c.match(/rgba?\(([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:[,\s/]+([\d.]+))?\)/);
+          if (!m) continue;
+          const alpha = m[4] === undefined ? 1 : Number(m[4]);
+          if (alpha > 0) return '#' + m.slice(1, 4).map((v) => (+v).toString(16).padStart(2, '0')).join('');
+        }
+        return null;
+      };
       const pick = (sel) => {
         const el = document.querySelector(sel);
         if (!el) return null;
@@ -136,14 +151,14 @@ try {
           if (!m) return c;
           return '#' + m.slice(0, 3).map((v) => (+v).toString(16).padStart(2, '0')).join('');
         };
-        return { sel, fg: toHex(cs.color), bg: toHex(cs.backgroundColor), size: cs.fontSize };
+        return { sel, fg: toHex(cs.color), bg: opaqueBg(el), size: cs.fontSize };
       };
       return ['.muted', '.tiny.muted', '.badge', '.badge.ok', '.badge.warn', '.notice', 'th', '.side-note'].map(pick).filter(Boolean);
     });
     console.log('\n[3] 对比度（AA 正文需 ≥4.5，大字/次要信息 ≥3）');
     for (const c of colors) {
-      if (!/^#/.test(c.fg) || !/^#/.test(c.bg) || c.bg === 'rgba(0,0,0,0)') {
-        console.log(`    ${c.sel.padEnd(14)} 跳过（背景透明，需按父级算）`);
+      if (!/^#/.test(c.fg) || !c.bg) {
+        console.log(`    ${c.sel.padEnd(14)} 跳过（找不到不透明祖先背景）`);
         continue;
       }
       const r = contrast(c.fg, c.bg);

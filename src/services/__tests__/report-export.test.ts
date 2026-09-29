@@ -4,11 +4,11 @@ import { createTestDatabase, type TestDatabase } from '../../db/test-executor';
 import { bindExecutor } from '../context';
 import { collectReport, createReportWorkbook, exportEventWorkbook } from '../report-export';
 import { localDate, reportFilename } from '../report-format';
-import { createEvent, listPaymentMethods, updatePaymentMethod, setEventPaymentMethods, addVariantsToEvent, updateConfig, activateEvent } from '../events';
-import { createProduct, listCategories } from '../catalog';
+import { createEvent, listPaymentMethods, updatePaymentMethod, setEventPaymentMethods, addVariantsToEvent, removeVariantsFromEvent, updateConfig, activateEvent } from '../events';
+import { createProduct, listCategories, setBundleComponents } from '../catalog';
 import { initializeStock } from '../inventory';
 import { staffDirectSale, recordRefund, correctOrder, createPendingOrder, voidOrder } from '../orders';
-import { addCashMovement } from '../reports';
+import { addCashMovement, exportInventoryCsv } from '../reports';
 import type { Currency } from '../../domain/types';
 
 let tdb: TestDatabase;
@@ -64,7 +64,7 @@ describe('营业报表 Excel', () => {
     expect(get('纠错金额')).toBe(12345 / factor);
     expect(get('理论钱箱')).toBe(-37035 / factor);
     expect(get('最近盘点现金')).toBeNull();
-    expect(data.tables.find(t => t.name === '库存')!.rows[0].slice(3)).toEqual([20, 19, 1, 18]);
+    expect(data.tables.find(t => t.name === '库存')!.rows[0].slice(3)).toEqual(['在场', 20, 19, 1, 18]);
     const workbook = await createReportWorkbook(data);
     const encoded = await workbook.xlsx.writeBuffer();
     const readBack = new ExcelJS.Workbook();
@@ -114,5 +114,68 @@ describe('营业报表 Excel', () => {
       return original(sql, params);
     });
     await expect(collectReport(eventId)).rejects.toThrow('数据发生变化');
+  });
+
+  it('库存表的「在场状态」分三档：在场 / 仅作套装成分 / 已移出本场', async () => {
+    const eventId = await createEvent({ name: '状态展', currency: 'CNY', timezone: 'Asia/Shanghai' });
+    const cash = (await listPaymentMethods()).find(m => m.type === 'cash')!;
+    await updatePaymentMethod(cash.id, { enabled: true });
+    await setEventPaymentMethods(eventId, [cash.id]);
+    const category = (await listCategories())[0];
+    const mk = (name: string, price: number) =>
+      createProduct({ name, type: 'normal' as const, category_id: category.id, default_currency: 'CNY' as const, default_price_minor: price });
+
+    // 成分故意「不入场」：开场校验只要求成分有库存行，不要求它在名册里
+    const comp = await mk('只在套装里卖', 300);
+    const lone = await mk('会被移除', 500);
+    const stay = await mk('留场', 700);
+    const { variantId: bundleId } = await createProduct({
+      name: '套装', type: 'bundle', category_id: category.id, default_currency: 'CNY', default_price_minor: 900
+    });
+
+    await addVariantsToEvent(eventId, [bundleId, lone.variantId, stay.variantId]);
+    for (const [id, price] of [[bundleId, 900], [lone.variantId, 500], [stay.variantId, 700]] as const) {
+      await updateConfig(eventId, id, { event_price_minor: price });
+    }
+    await setBundleComponents(bundleId, [{ component_variant_id: comp.variantId, quantity: 2 }]);
+    await initializeStock(eventId, comp.variantId, 30);
+    await initializeStock(eventId, lone.variantId, 12);
+    await initializeStock(eventId, stay.variantId, 7);
+    await activateEvent(eventId);
+
+    // 套装自身不持有库存行，所以这里只有三个普通商品
+    const presenceOf = async () => {
+      const rows = (await collectReport(eventId)).tables.find(t => t.name === '库存')!.rows;
+      return Object.fromEntries(rows.map(r => [String(r[0]), String(r[3])]));
+    };
+    // 成分从一开始就不在名册里，但被在场套装消耗 —— 所以是第二档而不是第一档
+    expect(await presenceOf()).toEqual({
+      只在套装里卖: '仅作套装成分',
+      会被移除: '在场',
+      留场: '在场'
+    });
+
+    await removeVariantsFromEvent(eventId, [lone.variantId]);
+
+    // 移除只删名册行，库存行按设计保留 —— 所以三档状态必须各自正确
+    expect(await presenceOf()).toEqual({
+      只在套装里卖: '仅作套装成分',
+      会被移除: '已移出本场',
+      留场: '在场'
+    });
+
+    // CSV 与 Excel 用同一份判定：列名与取值都要一致
+    const csv = await exportInventoryCsv(eventId);
+    const lines = csv.trim().split('\n');
+    expect(lines[0]).toContain('在场状态');
+    expect(lines.find(l => l.startsWith('只在套装里卖'))).toContain('仅作套装成分');
+    expect(lines.find(l => l.startsWith('会被移除'))).toContain('已移出本场');
+    expect(lines.find(l => l.startsWith('留场'))).toContain('在场');
+
+    // 已移出本场的行仍然列出（货还在箱子里），但不再是「在场」
+    const book = await createReportWorkbook(await collectReport(eventId));
+    const sheet = book.getWorksheet('库存')!;
+    expect(sheet.getCell('D7').value).toBeDefined();
+    expect(sheet.columnCount).toBe(8);
   });
 });

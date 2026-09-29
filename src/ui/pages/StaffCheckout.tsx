@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { getEvent, getEventPaymentMethods, listEventConfigs } from '../../services/events';
-import { getBundleComponentsBatch, listCategories, listProducts } from '../../services/catalog';
-import { getOrderDetail, staffDirectSale } from '../../services/orders';
+import { listCategories, listProducts } from '../../services/catalog';
+import { getBundleAvailability, getOrderDetail, staffDirectSale } from '../../services/orders';
 import { formatMoney, minorToInput, parseAmountToMinor } from '../../domain/money';
 import { newId } from '../../domain/ids';
 import { errorMessage, useApp } from '../../store';
@@ -72,6 +72,25 @@ export default function StaffCheckoutPage() {
     }
     return m;
   }, [configs.data]);
+
+  /**
+   * 套装的可用数要单独算。
+   *
+   * 它没有自己的库存行，所以上面的 availableMap 里根本没有它 ——
+   * 原来界面上直接 `(avail ?? 0)` 兜底，于是「成分明明有货」的套装一律显示售罄、
+   * 连点都点不动。这里按成分取最小，和游客菜单、下单校验用同一口径。
+   */
+  const bundleIdsInEvent = useMemo(
+    () => (configs.data ?? []).filter((c) => c.enabled === 1 && c.product_type === 'bundle').map((c) => c.variant_id),
+    [configs.data]
+  );
+  const bundleAvail = useAsync(
+    () =>
+      eventId && bundleIdsInEvent.length
+        ? getBundleAvailability(eventId, bundleIdsInEvent)
+        : Promise.resolve(new Map<string, number>()),
+    [eventId, bundleIdsInEvent.join(','), configs.data]
+  );
 
   const filtered = useMemo(() => {
     const kw = keyword.trim().toLowerCase();
@@ -235,10 +254,21 @@ export default function StaffCheckoutPage() {
 
           <div className="pos-grid">
             {filtered.map((c) => {
-              const avail = availableMap.get(c.variant_id);
               const inCart = lines.find((l) => l.variantId === c.variant_id)?.quantity ?? 0;
               const price = c.product_type === 'gift' ? 0 : Number(c.event_price_minor ?? 0);
-              const left = c.product_type === 'non_stock' ? null : (avail ?? 0) - inCart;
+              // 套装的可用数来自成分，而它是后一步才算出来的。
+              // 还没算出来时不能兜底成 0 —— 那正是「套装全显示售罄」的成因。
+              const isBundle = c.product_type === 'bundle';
+              const bundleStock = bundleAvail.data?.get(c.variant_id);
+              const stockPending = isBundle && bundleStock === undefined;
+              const left =
+                c.product_type === 'non_stock'
+                  ? null
+                  : isBundle
+                    ? stockPending
+                      ? null
+                      : (bundleStock ?? 0) - inCart
+                    : (availableMap.get(c.variant_id) ?? 0) - inCart;
               const soldOut = left !== null && left <= 0;
               return (
                 <div key={c.variant_id} className={`pos-card ${soldOut ? 'sold-out' : ''}`}>
@@ -254,7 +284,7 @@ export default function StaffCheckoutPage() {
                       <span className="stock-tag">不计库存</span>
                     ) : (
                       <span className={`stock-tag ${soldOut ? 'danger' : left !== null && left <= 3 ? 'warn' : ''}`}>
-                        {soldOut ? '售罄' : `余 ${left}`}
+                        {stockPending ? '…' : soldOut ? '售罄' : `余 ${left}`}
                       </span>
                     )}
                     {soldOut ? <span className="sold-veil">售罄</span> : null}

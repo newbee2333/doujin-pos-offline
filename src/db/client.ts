@@ -92,6 +92,11 @@ class DbClient implements SqlExecutor {
     return this.call<ImportSummary>('importStage', { bytes });
   }
 
+  /** 在非活动槽位建一个全新的空库，等 importCommit 切过去。 */
+  newStage(): Promise<ImportSummary> {
+    return this.call<ImportSummary>('newStage');
+  }
+
   importCommit(): Promise<{ slot: Slot; status: DbStatus }> {
     return this.call<{ slot: Slot; status: DbStatus }>('importCommit');
   }

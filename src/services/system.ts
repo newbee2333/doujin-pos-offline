@@ -3,7 +3,7 @@
 import { db } from '../db/client';
 import type { Slot } from '../db/client';
 import type { ImportSummary } from '../db/worker';
-import { getSetting, setSetting } from './context';
+import { ex, getMeta, getSetting, setSetting } from './context';
 import { DomainError } from './catalog';
 
 export interface BackupState {
@@ -209,6 +209,61 @@ export async function commitImport(): Promise<Slot> {
   storeSlot(slot);
   await setSetting('db.active_slot', slot);
   return slot;
+}
+
+/* ------------------------------------------------------------ 新建空库 */
+
+export interface NewDatabasePreview {
+  /** 即将被丢下的这个库里有什么。空库上这些数字全为 0。 */
+  current: {
+    datasetId: string | null;
+    revision: number;
+    eventCount: number;
+    orderCount: number;
+    completedOrderCount: number;
+    productCount: number;
+  };
+  backup: BackupState;
+}
+
+/**
+ * 新建空库前的现状：要丢下什么、以及有没有可以回去的备份。
+ *
+ * 全部走 `ex()` 而不是 `db.status()`，这样它能和别的服务一样进单测。
+ * dataset_id / revision 本来就在 metadata 表里，不必绕到 Worker 的 status。
+ */
+export async function previewNewDatabase(): Promise<NewDatabasePreview> {
+  const [datasetId, revision, events, orders, completed, products, backup] = await Promise.all([
+    getMeta('dataset_id'),
+    getMeta('revision'),
+    ex().readOne<{ c: number }>('SELECT COUNT(*) AS c FROM events'),
+    ex().readOne<{ c: number }>('SELECT COUNT(*) AS c FROM orders'),
+    ex().readOne<{ c: number }>("SELECT COUNT(*) AS c FROM orders WHERE status = 'completed'"),
+    ex().readOne<{ c: number }>('SELECT COUNT(*) AS c FROM products'),
+    getBackupState()
+  ]);
+  return {
+    current: {
+      datasetId,
+      revision: Number(revision ?? 0),
+      eventCount: Number(events?.c ?? 0),
+      orderCount: Number(orders?.c ?? 0),
+      completedOrderCount: Number(completed?.c ?? 0),
+      productCount: Number(products?.c ?? 0)
+    },
+    backup
+  };
+}
+
+/**
+ * 新建空库并切过去，返回新库所在槽位。
+ *
+ * 调用方必须自己做会话重置（见 Setup 的 doCommit）：整库换掉之后，
+ * 购物车、当前订单、当前展会、后台解锁状态说的都是**旧库**的东西。
+ */
+export async function createEmptyDatabase(): Promise<Slot> {
+  await db.newStage();
+  return commitImport();
 }
 
 export function readStoredSlot(): Slot {

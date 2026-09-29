@@ -5,6 +5,7 @@ import { newId, nowIso } from '../domain/ids';
 import { auditStep, beginIdempotent, ex, idempotencyStep } from './context';
 import { DomainError } from './catalog';
 import { getEvent } from './events';
+import { PRESENCE_COLUMNS, stockPresence } from './report-format';
 
 /** 有效成交：completed 与之后被退款的 refunded 都算原销售。 */
 const SALES_STATUSES = "('completed','refunded')";
@@ -157,17 +158,44 @@ export function getVariantSales(eventId: string): Promise<VariantSalesRow[]> {
 
 export interface ConsumptionRow {
   variant_id: string;
-  component_name: string;
+  /**
+   * 商品名。
+   *
+   * 原来这里读的是 `component_name_snapshot`，而那个快照存的是**规格名**
+   * （见 orders.ts 的写入），而绝大多数商品的规格名都是「默认规格」——
+   * 于是整列长得一模一样，摊主根本看不出哪一行是哪个商品。
+   * 现在直接连商品表取名字。
+   */
+  product_name: string;
+  variant_name: string;
+  sku: string | null;
+  /** 被套装带出去的数量（套装按成分展开） */
+  from_bundle_units: number;
+  /** 单卖的数量（普通商品自己消耗自己） */
+  solo_units: number;
   sold_units: number;
   returned_units: number;
   net_units: number;
 }
 
-/** 实际库存成分消耗：套装归套装商品收入，成分只计库存消耗。 */
+/**
+ * 实际库存消耗：每件东西一共出库多少、其中多少是被套装带走的。
+ *
+ * 这张表的数据源是 `order_inventory_components`。注意它**不只是套装成分**：
+ * 单卖的普通商品也会把自己写成「自己 × 1」的一条（orders.ts 的 perUnitComponents），
+ * 所以「套装带出 / 单卖」可以从订单行的商品类型直接拆出来，不用另做 union。
+ *
+ * 金额不在这里：套装是整单收的钱，把收入拆到成分上是人为定的比例。
+ * 收入看上面的商品排行，这里只看库存去了哪。
+ */
 export function getInventoryConsumption(eventId: string): Promise<ConsumptionRow[]> {
   return ex().read<ConsumptionRow>(
     `SELECT c.component_variant_id AS variant_id,
-            MAX(c.component_name_snapshot) AS component_name,
+            COALESCE(MAX(p.name), MAX(c.component_name_snapshot)) AS product_name,
+            COALESCE(MAX(v.name), '') AS variant_name,
+            MAX(v.sku) AS sku,
+            SUM(CASE WHEN oi.product_type_snapshot = 'bundle' THEN c.quantity_total ELSE 0 END) AS from_bundle_units,
+            SUM(CASE WHEN oi.product_type_snapshot = 'bundle' THEN 0 ELSE c.quantity_total END) AS solo_units,
             SUM(c.quantity_total) AS sold_units,
             COALESCE((SELECT SUM(rr.quantity_returned) FROM refund_returns rr
                       JOIN refunds r2 ON r2.id = rr.refund_id
@@ -189,6 +217,8 @@ export function getInventoryConsumption(eventId: string): Promise<ConsumptionRow
      FROM order_inventory_components c
      JOIN order_items oi ON oi.id = c.order_item_id
      JOIN orders o ON o.id = oi.order_id
+     LEFT JOIN product_variants v ON v.id = c.component_variant_id
+     LEFT JOIN products p ON p.id = v.product_id
      WHERE o.event_id = ? AND o.status IN ${SALES_STATUSES}
      GROUP BY c.component_variant_id
      ORDER BY sold_units DESC`,
@@ -421,7 +451,8 @@ export async function exportOrderItemsCsv(eventId: string): Promise<string> {
 
 export async function exportInventoryCsv(eventId: string): Promise<string> {
   const rows = await ex().read<Record<string, unknown>>(
-    `SELECT p.name AS product_name, v.name AS variant_name, v.sku, i.initial_stock, i.physical_stock, i.reserved_stock,
+    `SELECT p.name AS product_name, v.name AS variant_name, v.sku, ${PRESENCE_COLUMNS},
+            i.initial_stock, i.physical_stock, i.reserved_stock,
             i.physical_stock - i.reserved_stock AS available_stock
      FROM inventory i
      JOIN product_variants v ON v.id = i.variant_id
@@ -430,11 +461,12 @@ export async function exportInventoryCsv(eventId: string): Promise<string> {
     [eventId]
   );
   return toCsv(
-    ['商品', '规格', 'SKU', '初始库存', '实际库存', '预留', '可用'],
+    ['商品', '规格', 'SKU', '在场状态', '初始库存', '实际库存', '预留', '可用'],
     rows.map((r) => [
       r.product_name,
       r.variant_name,
       r.sku,
+      stockPresence(r),
       r.initial_stock,
       r.physical_stock,
       r.reserved_stock,
