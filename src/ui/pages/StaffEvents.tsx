@@ -22,7 +22,7 @@ import {
   updateEvent,
   updatePaymentMethod
 } from '../../services/events';
-import { createAsset, listCategories, listProducts } from '../../services/catalog';
+import { createAsset, getBundleComponentsBatch, listCategories, listProducts } from '../../services/catalog';
 import { getVariantSales } from '../../services/reports';
 import { initializeStock } from '../../services/inventory';
 import { hashBytes, preparePaymentQr } from '../../domain/image';
@@ -237,6 +237,47 @@ function EventDetail({
     [sales.data]
   );
 
+  // 本场所有「组合套装」的规格 id。移除规格前要查它是不是某个套装的成分。
+  const inEventBundleIds = useMemo(
+    () => (configs.data ?? []).filter((c) => c.product_type === 'bundle').map((c) => c.variant_id).sort(),
+    [configs.data]
+  );
+  const bundleComps = useAsync(
+    () =>
+      inEventBundleIds.length
+        ? getBundleComponentsBatch(inEventBundleIds)
+        : Promise.resolve(new Map<string, { component_variant_id: string }[]>()),
+    [inEventBundleIds.join(','), configs.data]
+  );
+
+  /**
+   * 成分 → 还在拿它当成分的本场套装。
+   *
+   * 只在「从本场移除」时用一次。这个缺口光看界面看不出来：
+   * 库存页是按本场名册（event_variant_configs）渲染行的，移除之后这一行就没了，
+   * 所以补货入口也没了；可套装还在按成分扣它的库存 ——
+   * 现场真缺货了，摊主会发现「这件东西在扣，但我找不到地方给它加回去」。
+   * 两个方向都只在名册里找，套装自己已经被移除的情况不算数。
+   */
+  const componentOwners = useMemo(() => {
+    const owners = new Map<string, { variantId: string; name: string }[]>();
+    const map = bundleComps.data;
+    if (!map) return owners;
+    const roster = configs.data ?? [];
+    const inRoster = new Set(roster.map((c) => c.variant_id));
+    const productName = new Map(roster.map((c) => [c.variant_id, c.product_name]));
+    for (const [bundleVariantId, comps] of map) {
+      if (!inRoster.has(bundleVariantId)) continue;
+      const owner = { variantId: bundleVariantId, name: productName.get(bundleVariantId) ?? '套装' };
+      for (const c of comps) {
+        const arr = owners.get(c.component_variant_id);
+        if (arr) arr.push(owner);
+        else owners.set(c.component_variant_id, [owner]);
+      }
+    }
+    return owners;
+  }, [bundleComps.data, configs.data]);
+
   // 只在「第一次还没有数据」时占屏。
   // 原来是 `event.loading || configs.loading`，而 useAsync 每次 reload 都会把 loading 置 true ——
   // 于是每改一个开关（上架 / 游客可见 / 限购）整张表都会先被 Spinner 顶掉再重建。
@@ -309,10 +350,30 @@ function EventDetail({
     const sold = ids.reduce((a, id) => a + (soldById.get(id) ?? 0), 0);
     const what = ids.length === 1 ? `「${cfgRows.find((c) => c.variant_id === ids[0])?.product_name ?? '这件'}」` : `选中的 ${ids.length} 个规格`;
     const soldNote = sold > 0 ? `\n本场已售 ${sold} 件：报表与库存流水都会保留，不会丢账。` : '';
+
+    // 仍被本场套装当成分的，单独警告一句。这次一起移除的套装不算 —— 移完就没它了。
+    const removing = new Set(ids);
+    const stillUsed: string[] = [];
+    for (const id of ids) {
+      const owners = (componentOwners.get(id) ?? []).filter((o) => !removing.has(o.variantId));
+      if (!owners.length) continue;
+      const row = cfgRows.find((c) => c.variant_id === id);
+      const self =
+        ids.length === 1 && row
+          ? `「${row.product_name}${row.variant_name ? ` · ${row.variant_name}` : ''}」`
+          : `「${row?.product_name ?? '其中一个规格'}」`;
+      stillUsed.push(`${self} 还是本场套装 ${owners.map((o) => `「${o.name}」`).join('、')} 的成分`);
+    }
+    const bundleNote = stillUsed.length
+      ? `\n\n⚠️ ${stillUsed.join('；')}。\n` +
+        `移除后套装仍会扣它的库存，但「库存」页不再有它的行，现场就没法给它补货了。\n` +
+        `本次不卖、以后还要补货的话，请用「下架」代替「移除」。`
+      : '';
+
     if (
       !window.confirm(
         `把${what}从本场移除？\n本场价格、库存开关、上下架状态会一起删掉。\n` +
-          `（只是不在本场卖了，商品本身不受影响；库存流水保留，以后再加回来还在。）${soldNote}`
+          `（只是不在本场卖了，商品本身不受影响；库存流水保留，以后再加回来还在。）${soldNote}${bundleNote}`
       )
     ) {
       return;

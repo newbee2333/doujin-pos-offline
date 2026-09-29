@@ -631,4 +631,33 @@ describe('库存消耗统计（第 20 节）', () => {
     expect(row.net_units).toBe(1);
     expect((await getInventory(eventId, a.variantId))?.physical_stock).toBe(9);
   });
+
+  it('商品名要能认出是哪一件，并把「套装带出 / 单卖」拆开', async () => {
+    const { eventId, categoryId, cashId } = await setupEvent();
+    const a = await addItem(eventId, categoryId, { name: '吧唧·主角', price: 800, stock: 20 });
+    const bundle = await createProduct({ name: '三件套', type: 'bundle', category_id: categoryId, default_currency: 'CNY' });
+    await addVariantsToEvent(eventId, [bundle.variantId]);
+    await updateConfig(eventId, bundle.variantId, { event_price_minor: 1500 });
+    await setBundleComponents(bundle.variantId, [{ component_variant_id: a.variantId, quantity: 2 }]);
+    await activateEvent(eventId);
+
+    // 同一单里：1 套（带出 2 个吧唧）+ 单卖 3 个吧唧
+    await staffDirectSale({
+      eventId,
+      lines: [{ variantId: bundle.variantId, quantity: 1 }, { variantId: a.variantId, quantity: 3 }],
+      paymentMethodId: cashId,
+      tenderedMinor: 4000
+    });
+
+    const row = (await getInventoryConsumption(eventId)).find((r) => r.variant_id === a.variantId)!;
+    // 这一格以前取的是库存快照里的**规格名**，而规格名几乎都是「默认规格」——
+    // 整列看下去全是同样的四个字，认不出是哪件东西。
+    expect(row.product_name).toBe('吧唧·主角');
+    expect(row.variant_name).toBe('默认规格');
+    // 单卖的普通商品也会把自己写成一条成分（自己 × 1），所以来源能直接拆出来
+    expect(row.from_bundle_units).toBe(2);
+    expect(row.solo_units).toBe(3);
+    expect(row.sold_units).toBe(5);
+    expect(row.net_units).toBe(5);
+  });
 });

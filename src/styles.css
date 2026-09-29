@@ -612,6 +612,120 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .modal h2 { margin-top: 0; }
 .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 18px; flex-wrap: wrap; }
 
+/* ------------------------------------------- 规格选择器（复用菜单卡 + 搜索）
+   收起时只有一行摘要（缩略图 + 品名 / 规格名），点开才铺开菜单卡网格。
+   不默认铺开是因为一个套装可能有好几条成分 —— 每行都挂一片卡片墙太重，
+   而摊主多数时候只是确认一下「这条成分是不是它」。
+   卡片本身复用 .menu-card / .menu-card-cover（见 MenuCard 的选择模式）。
+   网格没有直接用 .menu-grid：那个类带着给购物车条留的底衬和 620/760/980
+   三档容器查询列数，是按游客面整屏宽度调的，这里是弹窗里的内嵌区块。 */
+.variant-picker {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+/* 一条套装成分占一块：上面是选择器，下面是数量与移除。
+   竖着放而不是挤在一行 —— 展开后的卡片网格需要整行宽度。 */
+.bundle-comp {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-2);
+  margin-bottom: var(--sp-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+}
+.vp-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  min-height: var(--tap);
+  padding: var(--sp-1) var(--sp-2) var(--sp-1) var(--sp-1);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  text-align: left;
+  cursor: pointer;
+}
+.vp-toggle:hover { border-color: var(--accent); }
+.vp-toggle-text { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.vp-name {
+  font-size: var(--fs-small);
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.vp-sub {
+  font-size: var(--fs-caption);
+  color: var(--ink-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.vp-placeholder { font-size: var(--fs-small); color: var(--ink-3); }
+.vp-caret { flex-shrink: 0; font-size: var(--fs-caption); color: var(--ink-3); }
+/* 没有封面时不占位、也不写「无图片」——36px 见方放不下那三个字 */
+.vp-thumb {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  object-fit: cover;
+}
+.vp-panel {
+  padding: var(--sp-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+}
+.vp-search {
+  width: 100%;
+  margin-bottom: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  font-size: var(--fs-small);
+}
+.vp-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: var(--sp-3);
+  /* 弹窗自己也滚，两层都滚会互相抢 —— 这里给个上限，超出的在块内滚 */
+  max-height: 340px;
+  overflow: auto;
+  padding: 2px;
+}
+.vp-empty { font-size: var(--fs-small); color: var(--ink-3); margin: 0; padding: var(--sp-2); }
+
+/* 选择模式（套装成分）：选中的卡片描边 + 底色，并在动作行给出勾选按钮。
+   描边用 box-shadow 而不是 border —— 换 border 会让卡片尺寸跳一下。 */
+.menu-card-cover.picked {
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 2px var(--accent);
+}
+.pick-btn {
+  flex: 1;
+  min-height: var(--tap-sm);
+  padding: 0 var(--sp-2);
+  background: var(--surface);
+  color: var(--ink-2);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-small);
+  font-weight: 600;
+  cursor: pointer;
+}
+.pick-btn:hover { border-color: var(--accent); color: var(--accent); }
+.pick-btn.on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
 /* --------------------------------------------------- 菜单（游客） */
 /* 游客面与后台现在共用同一套全局令牌。原来 .kiosk 里那一串
    var(--k-bg) / var(--k-ink) / var(--k-line) 是换皮期的过渡层，

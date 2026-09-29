@@ -161,13 +161,19 @@ export default function StaffReportsPage() {
           </div>
 
           <div className="card">
-            <h2>库存成分消耗</h2>
+            <h2>库存消耗明细</h2>
+            <p className="tiny muted" style={{ marginTop: -6 }}>
+              卖出去多少件就消耗多少库存，套装按成分展开算。「套装带出」是随套装一起卖掉的，
+              「单卖」是单独卖掉的。金额不在这里——套装是整单收的钱，拆到成分上是人为定的比例。
+            </p>
             <div className="table-wrap">
               <table className="zebra">
                 <thead>
                   <tr>
-                    <th>成分</th>
-                    <th className="num">售出</th>
+                    <th>商品</th>
+                    <th className="num">套装带出</th>
+                    <th className="num">单卖</th>
+                    <th className="num">合计售出</th>
                     <th className="num">返库</th>
                     <th className="num">净消耗</th>
                   </tr>
@@ -175,9 +181,17 @@ export default function StaffReportsPage() {
                 <tbody>
                   {consumption.data?.map((r) => (
                     <tr key={r.variant_id}>
-                      <td>{r.component_name}</td>
+                      <td>
+                        {r.product_name}
+                        <div className="tiny muted">
+                          {r.variant_name}
+                          {r.sku ? ` · SKU ${r.sku}` : ''}
+                        </div>
+                      </td>
+                      <td className="num">{r.from_bundle_units || ''}</td>
+                      <td className="num">{r.solo_units || ''}</td>
                       <td className="num">{r.sold_units}</td>
-                      <td className="num">{r.returned_units}</td>
+                      <td className="num">{r.returned_units || ''}</td>
                       <td className="num strong">{r.net_units}</td>
                     </tr>
                   ))}

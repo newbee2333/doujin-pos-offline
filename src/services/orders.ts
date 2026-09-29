@@ -353,10 +353,16 @@ function insertOrderSteps(
     for (const c of item.perUnitComponents) {
       steps.push({
         t: 'run',
+        // 快照要能自己说明「这是哪个商品」。原来只存了 v.name，而绝大多数商品的
+        // 规格名都是「默认规格」——于是订单页退出/纠错时的成分清单、以及按快照显示的
+        // 那些地方，一列看下去全是「默认规格」，认不出东西。
         sql: `INSERT INTO order_inventory_components (id, order_item_id, component_variant_id, quantity_total, component_name_snapshot, sku_snapshot)
-              SELECT ?, ?, ?, ?, COALESCE((SELECT v.name FROM product_variants v WHERE v.id = ?), ?),
+              SELECT ?, ?, ?, ?,
+                     COALESCE((SELECT p.name || '（' || v.name || '）'
+                               FROM product_variants v JOIN products p ON p.id = v.product_id
+                               WHERE v.id = ?), ?),
                      (SELECT v.sku FROM product_variants v WHERE v.id = ?)`,
-        params: [newId(), itemId, c.variantId, c.quantity * item.quantity, c.variantId, c.variantId, c.variantId]
+        params: [newId(), itemId, c.variantId, c.quantity * item.quantity, c.variantId, c.name || c.variantId, c.variantId]
       });
     }
   }
@@ -982,6 +988,51 @@ export async function getOrderDetail(orderId: string): Promise<OrderDetail | nul
 
 /* ------------------------------------------------------------ 游客菜单 */
 
+/**
+ * 套装的可用数 = 各成分可用数除以用量后取**最小**的那个。
+ *
+ * 抽出来是因为有两个调用方需要同一口径：游客菜单和摊主收银台。
+ * 收银台原来直接用名册里的 physical_stock，而套装根本没有自己的库存行 ——
+ * 于是「成分明明有货」的套装在收银台上显示成售罄，而且点不动。
+ *
+ * 成分必须直接查 inventory，不能只从 event_variant_configs 里找：
+ * 成分可以从本场名册移除、却仍然被在场套装消耗（报表里标「仅作套装成分」）。
+ */
+export async function getBundleAvailability(
+  eventId: string,
+  bundleVariantIds: string[]
+): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  if (!bundleVariantIds.length) return out;
+
+  const bundleMap = await getBundleComponentsBatch(bundleVariantIds);
+  const componentIds = new Set<string>();
+  for (const comps of bundleMap.values()) for (const c of comps) componentIds.add(c.component_variant_id);
+
+  let available = new Map<string, number>();
+  if (componentIds.size) {
+    const list = Array.from(componentIds);
+    const inv = await ex().read<{ variant_id: string; physical_stock: number; reserved_stock: number }>(
+      `SELECT variant_id, physical_stock, reserved_stock FROM inventory
+       WHERE event_id = ? AND variant_id IN (${list.map(() => '?').join(',')})`,
+      [eventId, ...list]
+    );
+    available = new Map(inv.map((r) => [r.variant_id, r.physical_stock - r.reserved_stock]));
+  }
+
+  for (const bundleVariantId of bundleVariantIds) {
+    const comps = bundleMap.get(bundleVariantId) ?? [];
+    // 没有成分的套装卖出去不扣任何东西，按 0 处理更安全
+    out.set(
+      bundleVariantId,
+      comps.length
+        ? Math.min(...comps.map((c) => Math.floor((available.get(c.component_variant_id) ?? 0) / c.quantity)))
+        : 0
+    );
+  }
+  return out;
+}
+
 export async function getKioskMenu(eventId: string): Promise<MenuItem[]> {
   const event = await getEvent(eventId);
   if (!event) return [];
@@ -1023,27 +1074,12 @@ export async function getKioskMenu(eventId: string): Promise<MenuItem[]> {
   );
 
   const bundleIds = rows.filter((r) => r.product_type === 'bundle').map((r) => r.variant_id);
-  const bundleMap = await getBundleComponentsBatch(bundleIds);
-  const componentIds = new Set<string>();
-  for (const comps of bundleMap.values()) for (const c of comps) componentIds.add(c.component_variant_id);
-  let availability = new Map<string, number>();
-  if (componentIds.size) {
-    const list = Array.from(componentIds);
-    const inv = await ex().read<{ variant_id: string; physical_stock: number; reserved_stock: number }>(
-      `SELECT variant_id, physical_stock, reserved_stock FROM inventory
-       WHERE event_id = ? AND variant_id IN (${list.map(() => '?').join(',')})`,
-      [eventId, ...list]
-    );
-    availability = new Map(inv.map((r) => [r.variant_id, r.physical_stock - r.reserved_stock]));
-  }
+  const bundleAvailable = await getBundleAvailability(eventId, bundleIds);
 
   return rows.map((r) => {
     let available: number | null = null;
     if (r.product_type === 'bundle') {
-      const comps = bundleMap.get(r.variant_id) ?? [];
-      available = comps.length
-        ? Math.min(...comps.map((c) => Math.floor((availability.get(c.component_variant_id) ?? 0) / c.quantity)))
-        : 0;
+      available = bundleAvailable.get(r.variant_id) ?? 0;
     } else if (r.product_type === 'normal' || r.product_type === 'gift') {
       available = r.physical_stock === null ? 0 : r.physical_stock - (r.reserved_stock ?? 0);
     }
