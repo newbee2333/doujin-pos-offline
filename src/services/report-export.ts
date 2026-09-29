@@ -3,7 +3,7 @@ import type { Event } from '../domain/types';
 import { ex } from './context';
 import { getEvent } from './events';
 import { getDashboard, getExpectedCash, getPaymentSummary, getProductRanking, listCashMovements, listSettlements } from './reports';
-import { label, localDate, majorAmount, reportFilename, STATUS_LABEL, unitLabel } from './report-format';
+import { label, localDate, majorAmount, PRESENCE_COLUMNS, reportFilename, STATUS_LABEL, stockPresence, unitLabel } from './report-format';
 
 type Value = string | number | Date | null;
 type Kind = 'text' | 'number' | 'money' | 'date';
@@ -30,7 +30,8 @@ export async function collectReport(eventId: string): Promise<ReportData> {
       WHERE o.event_id=? ORDER BY o.human_readable_number`, [eventId]),
     ex().read<Row>(`SELECT o.human_readable_number, o.status, oi.* FROM order_items oi
       JOIN orders o ON o.id=oi.order_id WHERE o.event_id=? ORDER BY o.human_readable_number, oi.rowid`, [eventId]),
-    ex().read<Row>(`SELECT p.name AS product_name, v.name AS variant_name, v.sku, i.* FROM inventory i
+    ex().read<Row>(`SELECT p.name AS product_name, v.name AS variant_name, v.sku, ${PRESENCE_COLUMNS},
+        i.* FROM inventory i
       JOIN product_variants v ON v.id=i.variant_id JOIN products p ON p.id=v.product_id
       WHERE i.event_id=? ORDER BY p.name,v.name`, [eventId]),
     ex().read<Row>(`SELECT t.*, p.name AS product_name, v.name AS variant_name, o.human_readable_number
@@ -81,9 +82,9 @@ export async function collectReport(eventId: string): Promise<ReportData> {
     { name: '订单明细', note: '商品名、规格、价格保留成交时快照。包括待付款、取消及纠错明细，汇总前请筛选订单状态。',
       columns: [col('订单号', 14, 'number'), col('订单状态', 16), col('商品', 38), col('规格', 28), col('SKU', 22), col('商品类型', 18), moneyCol('单价'), col('数量', 14, 'number'), moneyCol('小计')],
       rows: items.map(r => [Number(r.human_readable_number), label(r.status, STATUS_LABEL), text(r.product_name_snapshot), text(r.variant_name_snapshot), text(r.sku_snapshot), label(r.product_type_snapshot), money(r.unit_price_minor), Number(r.quantity), money(r.subtotal_minor)]) },
-    { name: '库存', note: '可售库存＝实物库存－待付款预留。套装共用成分库存，不应把套装当作额外实物库存相加。',
-      columns: [col('商品', 38), col('规格', 28), col('SKU', 22), col('初始入库', 16, 'number'), col('实物库存', 16, 'number'), col('待付款预留', 18, 'number'), col('可售库存', 16, 'number')],
-      rows: inventory.map(r => [text(r.product_name), text(r.variant_name), text(r.sku), Number(r.initial_stock), Number(r.physical_stock), Number(r.reserved_stock), Number(r.physical_stock) - Number(r.reserved_stock)]) },
+    { name: '库存', note: '可售库存＝实物库存－待付款预留。套装共用成分库存，不应把套装当作额外实物库存相加。「在场状态」列标出已移出本场与仅作套装成分的规格。',
+      columns: [col('商品', 38), col('规格', 28), col('SKU', 22), col('在场状态', 16), col('初始入库', 16, 'number'), col('实物库存', 16, 'number'), col('待付款预留', 18, 'number'), col('可售库存', 16, 'number')],
+      rows: inventory.map(r => [text(r.product_name), text(r.variant_name), text(r.sku), stockPresence(r), Number(r.initial_stock), Number(r.physical_stock), Number(r.reserved_stock), Number(r.physical_stock) - Number(r.reserved_stock)]) },
     { name: '库存流水', note: '增减是有符号数：正数增加，负数减少；释放预留不代表实物出库。',
       columns: [col('时间', 24, 'date'), col('变动类型', 20), col('商品', 38), col('规格', 28), col('实物增减', 16, 'number'), col('预留增减', 16, 'number'), col('原因', 42), col('订单号', 14, 'number')],
       rows: transactions.map(r => [date(r.created_at), label(r.type), text(r.product_name), text(r.variant_name), Number(r.delta_physical), Number(r.delta_reserved), text(r.reason), r.human_readable_number === null ? null : Number(r.human_readable_number)]) },
