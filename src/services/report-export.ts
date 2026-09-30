@@ -1,4 +1,5 @@
-import type { Workbook, Worksheet } from 'exceljs';
+import type { Workbook } from 'exceljs';
+import { layoutDetailSheet, layoutOverview } from './report-layout';
 import type { Event } from '../domain/types';
 import { ex } from './context';
 import { getEvent } from './events';
@@ -44,7 +45,7 @@ export async function collectReport(eventId: string): Promise<ReportData> {
   const money = (value: unknown) => majorAmount(Number(value ?? 0), event.currency);
   const date = (value: unknown) => localDate(value, event.timezone);
   const unit = unitLabel(event.currency);
-  const moneyCol = (title: string) => col(`${title}（${unit}）`, 22, 'money');
+  const moneyCol = (title: string) => col(`${title}（${event.currency === 'CNY' ? '元' : '日元'}）`, 18, 'money');
   const currentSettlement = settlements.find(s => !s.superseded);
   const overview: ReportTable = {
     name: '营业总览', note: '金额为导出时的营业快照，不是利润。明细与总览使用相同统计口径。',
@@ -71,7 +72,7 @@ export async function collectReport(eventId: string): Promise<ReportData> {
   return { event, generatedAt, revision: before, tables: [
     overview,
     { name: '商品销售', note: '含已退款订单的原销售，不扣退货；套装收入计在套装上，赠品金额为零。',
-      columns: [col('商品', 38), col('规格', 28), col('SKU', 22), col('销售件数', 16, 'number'), moneyCol('销售额'), col('含退款订单数', 20, 'number')],
+      columns: [col('商品', 36), col('规格', 20), col('SKU', 16), col('销售件数', 14, 'number'), moneyCol('销售额'), col('含退款订单数', 18, 'number')],
       rows: ranking.map(r => [r.product_name, r.variant_name, r.sku, r.units, money(r.amount_minor), r.refund_order_count]) },
     { name: '收款汇总', note: '有效收款含退款订单的原收款；退款单独扣除；纠错订单不计入。',
       columns: [col('收款方式'), col('方式类型'), moneyCol('有效收款'), moneyCol('实际退款'), moneyCol('净流入'), col('收款单数', 16, 'number')],
@@ -80,10 +81,10 @@ export async function collectReport(eventId: string): Promise<ReportData> {
       columns: [col('订单号', 14, 'number'), col('状态', 15), moneyCol('订单金额'), moneyCol('有效销售额'), moneyCol('退款额'), col('收款方式'), col('来源', 18), col('创建时间', 24, 'date'), col('成交时间', 24, 'date'), col('退款原因', 35), col('纠错原因', 35)],
       rows: orders.map(r => [Number(r.human_readable_number), label(r.status, STATUS_LABEL), money(r.total_minor), ['completed','refunded'].includes(text(r.status)) ? money(r.total_minor) : 0, money(r.refund_minor), text(r.method_name_snapshot), label(r.source), date(r.created_at), date(r.completed_at), text(r.refund_reason), text(r.correction_reason)]) },
     { name: '订单明细', note: '商品名、规格、价格保留成交时快照。包括待付款、取消及纠错明细，汇总前请筛选订单状态。',
-      columns: [col('订单号', 14, 'number'), col('订单状态', 16), col('商品', 38), col('规格', 28), col('SKU', 22), col('商品类型', 18), moneyCol('单价'), col('数量', 14, 'number'), moneyCol('小计')],
+      columns: [col('订单号', 12, 'number'), col('订单状态', 14), col('商品', 36), col('规格', 20), col('SKU', 16), col('商品类型', 14), moneyCol('单价'), col('数量', 12, 'number'), moneyCol('小计')],
       rows: items.map(r => [Number(r.human_readable_number), label(r.status, STATUS_LABEL), text(r.product_name_snapshot), text(r.variant_name_snapshot), text(r.sku_snapshot), label(r.product_type_snapshot), money(r.unit_price_minor), Number(r.quantity), money(r.subtotal_minor)]) },
     { name: '库存', note: '可售库存＝实物库存－待付款预留。套装共用成分库存，不应把套装当作额外实物库存相加。「在场状态」列标出已移出本场与仅作套装成分的规格。',
-      columns: [col('商品', 38), col('规格', 28), col('SKU', 22), col('在场状态', 16), col('初始入库', 16, 'number'), col('实物库存', 16, 'number'), col('待付款预留', 18, 'number'), col('可售库存', 16, 'number')],
+      columns: [col('商品', 36), col('规格', 20), col('SKU', 16), col('在场状态', 18), col('初始入库', 14, 'number'), col('实物库存', 14, 'number'), col('待付款预留', 16, 'number'), col('可售库存', 14, 'number')],
       rows: inventory.map(r => [text(r.product_name), text(r.variant_name), text(r.sku), stockPresence(r), Number(r.initial_stock), Number(r.physical_stock), Number(r.reserved_stock), Number(r.physical_stock) - Number(r.reserved_stock)]) },
     { name: '库存流水', note: '增减是有符号数：正数增加，负数减少；释放预留不代表实物出库。',
       columns: [col('时间', 24, 'date'), col('变动类型', 20), col('商品', 38), col('规格', 28), col('实物增减', 16, 'number'), col('预留增减', 16, 'number'), col('原因', 42), col('订单号', 14, 'number')],
@@ -94,66 +95,6 @@ export async function collectReport(eventId: string): Promise<ReportData> {
   ] };
 }
 
-function styleSheet(sheet: Worksheet, table: ReportTable, data: ReportData) {
-  const n = table.columns.length;
-  sheet.columns = table.columns.map(c => ({ width: c.width }));
-  sheet.mergeCells(1, 1, 1, n);
-  sheet.getCell(1, 1).value = `${data.event.name} · ${table.name}`;
-  sheet.getCell(1, 1).font = { name: '微软雅黑', size: 20, bold: true, color: { argb: 'FFFFFFFF' } };
-  sheet.getCell(1, 1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF263448' } };
-  sheet.getCell(1, 1).alignment = { vertical: 'middle', wrapText: true };
-  sheet.getRow(1).height = 52;
-  sheet.mergeCells(2, 1, 2, n);
-  sheet.getCell(2, 1).value = `展会：${data.event.start_date ?? '未设置'} 至 ${data.event.end_date ?? '未设置'}　摊位：${data.event.booth_number || '未设置'}　金额：${unitLabel(data.event.currency)}（${data.event.currency}）　时间：${data.event.timezone}`;
-  sheet.getRow(2).height = 36;
-  sheet.mergeCells(3, 1, 3, n);
-  sheet.getCell(3, 1).value = table.note;
-  sheet.getRow(3).height = 38;
-  sheet.mergeCells(4, 1, 4, n);
-  sheet.getCell(4, 1).value = `导出时间：${localDate(data.generatedAt.toISOString(), data.event.timezone)!.toISOString().replace('T', ' ').slice(0, 19)}　数据修订：${data.revision}　报表用于阅读与分析，完整恢复请使用 SQLite 备份。`;
-  sheet.getRow(4).height = 32;
-  for (const i of [2, 3, 4]) {
-    sheet.getCell(i, 1).font = { name: '微软雅黑', size: 11, color: { argb: 'FF526176' } };
-    sheet.getCell(i, 1).alignment = { wrapText: true, vertical: 'middle' };
-  }
-  sheet.getRow(6).values = table.columns.map(c => c.title);
-  sheet.getRow(6).height = 34;
-  sheet.getRow(6).eachCell(cell => {
-    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD23760' } };
-    cell.font = { name: '微软雅黑', size: 11, bold: true, color: { argb: 'FFFFFFFF' } };
-    cell.alignment = { vertical: 'middle', wrapText: true };
-  });
-  const moneyFormat = data.event.currency === 'CNY' ? '#,##0.00;[Red]-#,##0.00' : '#,##0;[Red]-#,##0';
-  table.rows.forEach((values, i) => {
-    const row = sheet.getRow(i + 7);
-    row.values = values; // Text is never interpreted as a formula or hyperlink.
-    const lines = values.map((value, j) => typeof value === 'string'
-      ? value.split('\n').reduce((sum, line) => sum + Math.max(1, Math.ceil(
-        [...line].reduce((width, char) => width + (char.charCodeAt(0) > 255 ? 2 : 1), 0) / Math.max(1, table.columns[j].width - 3)
-      )), 0) : 1);
-    row.height = Math.min(409, Math.max(38, Math.max(...lines) * 17 + 10));
-    table.columns.forEach((column, j) => {
-      const cell = row.getCell(j + 1);
-      const value = values[j];
-      cell.font = { name: '微软雅黑', size: 11, color: { argb: 'FF263448' } };
-      cell.alignment = { wrapText: true, vertical: 'middle', horizontal: typeof value === 'number' ? 'right' : 'left' };
-      if (i % 2 === 0) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2F5F9' } };
-      cell.numFmt = value instanceof Date ? 'yyyy-mm-dd hh:mm:ss' : column.kind === 'money' ? moneyFormat : column.kind === 'number' ? '#,##0;[Red]-#,##0' : '@';
-      if (table.name === '营业总览' && j === 1 && values[2] === unitLabel(data.event.currency)) cell.numFmt = moneyFormat;
-    });
-  });
-  if (table.rows.length === 0) {
-    sheet.mergeCells(7, 1, 7, n);
-    sheet.getCell(7, 1).value = '本场暂无记录';
-    sheet.getRow(7).height = 30;
-  } else {
-    sheet.autoFilter = { from: { row: 6, column: 1 }, to: { row: 6 + table.rows.length, column: n } };
-  }
-  sheet.views = [{ state: 'frozen', ySplit: 6, xSplit: 1, showGridLines: false }];
-  sheet.pageSetup = { orientation: 'landscape', paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 0, printTitlesRow: '1:6' };
-  sheet.headerFooter.oddFooter = '&L' + table.name + '&R第 &P 页 / 共 &N 页';
-}
-
 export async function createReportWorkbook(data: ReportData): Promise<Workbook> {
   // Vite 将其打成独立分块；PWA 预缓存也包含该分块，断网可以首次导出。
   const { default: ExcelJS } = await import('exceljs');
@@ -162,7 +103,9 @@ export async function createReportWorkbook(data: ReportData): Promise<Workbook> 
   book.created = data.generatedAt;
   for (const table of data.tables) {
     if (table.rows.length > 1048570) throw new Error('报表超过 Excel 行数限制，请使用 CSV 导出');
-    styleSheet(book.addWorksheet(table.name), table, data);
+    const sheet = book.addWorksheet(table.name);
+    if (table.name === '营业总览') layoutOverview(sheet, table, data);
+    else layoutDetailSheet(sheet, table, data);
   }
   return book;
 }
