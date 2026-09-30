@@ -273,10 +273,13 @@ try {
     const book = new ExcelJS.Workbook();
     await book.xlsx.readFile(await download.path());
     if (book.worksheets.length !== 8 || book.worksheets[0].name !== '营业总览') throw new Error('Excel 工作表不完整');
-    if (!(book.worksheets[0].getCell('B7').value > 0)) throw new Error('Excel 销售额缺失');
+    if (!(book.worksheets[0].getCell('A6').value > 0)) throw new Error('Excel 销售额缺失');
+    if (book.worksheets.some(sheet => sheet.views.some(view => view.state !== 'normal' || view.xSplit || view.ySplit))) {
+      throw new Error('Excel 仍存在冻结窗格分隔线');
+    }
     // 库存表第 4 列是「在场状态」—— 这一列靠 SQL 的 EXISTS 算出来，
     // 单元测试走的是内存库，这里再确认一次真实下载的文件里也有。
-    if (String(book.getWorksheet('库存')?.getCell('D6').value) !== '在场状态') {
+    if (String(book.getWorksheet('库存')?.getCell('D5').value) !== '在场状态') {
       throw new Error('库存表缺少「在场状态」列');
     }
     ok('断网后首次导出 Excel，8 张工作表可读取', download.suggestedFilename());

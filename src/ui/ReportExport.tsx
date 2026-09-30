@@ -59,7 +59,7 @@ export default function ReportExport({ eventId, eventName }: { eventId: string; 
 
   return <section className="card" aria-labelledby="report-export-title">
     <h2 id="report-export-title">导出营业报表</h2>
-    <p className="small muted">一个 Excel 文件，先看营业总览，再按工作表查看商品、收款、订单和库存。金额使用元／日元，时间按展会时区显示。</p>
+    <p className="small muted">打开先看销售额、退款和净销售额，下方分组查看订单、钱箱及畅销商品。完整记录在后面的工作表中，金额按元／日元显示。</p>
     <button className="primary" disabled={busy} onClick={() => void run('xlsx')}>
       {busy ? '正在生成报表…' : '导出 Excel 营业报表'}
     </button>

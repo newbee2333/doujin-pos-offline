@@ -8,7 +8,7 @@ import { createEvent, listPaymentMethods, updatePaymentMethod, setEventPaymentMe
 import { createProduct, listCategories, setBundleComponents } from '../catalog';
 import { initializeStock } from '../inventory';
 import { staffDirectSale, recordRefund, correctOrder, createPendingOrder, voidOrder } from '../orders';
-import { addCashMovement, exportInventoryCsv } from '../reports';
+import { addCashMovement, exportInventoryCsv, settleEvent } from '../reports';
 import type { Currency } from '../../domain/types';
 
 let tdb: TestDatabase;
@@ -67,23 +67,35 @@ describe('营业报表 Excel', () => {
     expect(data.tables.find(t => t.name === '库存')!.rows[0].slice(3)).toEqual(['在场', 20, 19, 1, 18]);
     const workbook = await createReportWorkbook(data);
     const encoded = await workbook.xlsx.writeBuffer();
+    if (process.env.REPORT_LAYOUT_SAMPLE === '1' && currency === 'CNY') {
+      const fs = await import('node:fs/promises');
+      await fs.mkdir('test-results', { recursive: true });
+      await fs.writeFile('test-results/report-layout-cny.xlsx', new Uint8Array(encoded));
+    }
     const readBack = new ExcelJS.Workbook();
     await readBack.xlsx.load(encoded);
     expect(readBack.worksheets.map(s => s.name)).toEqual(['营业总览','商品销售','收款汇总','订单','订单明细','库存','库存流水','现金流水']);
-    expect(readBack.getWorksheet('营业总览')!.getCell('B7').value).toBe(24690 / factor);
-    expect(readBack.getWorksheet('营业总览')!.getCell('B7').numFmt).toContain(currency === 'CNY' ? '#,##0.00' : '#,##0');
+    expect(readBack.getWorksheet('营业总览')!.getCell('A6').value).toBe(24690 / factor);
+    expect(readBack.getWorksheet('营业总览')!.getCell('A6').numFmt).toContain(currency === 'CNY' ? '#,##0.00' : '#,##0');
     const items = readBack.getWorksheet('订单明细')!;
-    expect(items.getCell('C7').value).toBe('=SUM(1,2)\n长商品名');
-    expect(items.getCell('C7').type).toBe(ExcelJS.ValueType.String);
-    expect(items.getCell('G7').value).toBe(12345 / factor);
-    expect(items.views[0]).toMatchObject({ state: 'frozen', ySplit: 6, xSplit: 1 });
+    expect(items.getCell('C6').value).toBe('=SUM(1,2)\n长商品名');
+    expect(items.getCell('C6').type).toBe(ExcelJS.ValueType.String);
+    expect(items.getCell('G6').value).toBe(12345 / factor);
+    expect(items.views[0]).toMatchObject({ state: 'normal', showGridLines: false });
+    for (const sheet of readBack.worksheets) expect(sheet.views.every(v => v.state === 'normal' && !('xSplit' in v) && !('ySplit' in v))).toBe(true);
+    expect(readBack.getWorksheet('营业总览')!.autoFilter).toBeUndefined();
+    expect(readBack.getWorksheet('营业总览')!.getCell('C6').value).toBe(12345 / factor);
+    expect(readBack.getWorksheet('营业总览')!.getCell('E6').value).toBe(12345 / factor);
+    expect(readBack.getWorksheet('营业总览')!.getCell('C20').value).toBe(-37035 / factor);
+    expect(readBack.getWorksheet('营业总览')!.getCell('F19').value).toBe('未盘点');
+    expect(readBack.getWorksheet('营业总览')!.getCell('F20').value).toBe('未结算');
     expect(items.autoFilter).toBeTruthy();
     const orders = readBack.getWorksheet('订单')!;
-    expect(orders.getCell('B7').value).toBe('已成交');
-    expect(orders.getCell('B8').value).toBe('已退款');
-    expect(orders.getCell('B9').value).toBe('已纠错');
-    expect(orders.getCell('D9').value).toBe(0);
-    expect(orders.getCell('H7').value).toBeInstanceOf(Date);
+    expect(orders.getCell('B6').value).toBe('已成交');
+    expect(orders.getCell('B7').value).toBe('已退款');
+    expect(orders.getCell('B8').value).toBe('已纠错');
+    expect(orders.getCell('D8').value).toBe(0);
+    expect(orders.getCell('H6').value).toBeInstanceOf(Date);
     for (const sheet of readBack.worksheets) sheet.eachRow(row => row.eachCell(cell => expect(cell.type).not.toBe(ExcelJS.ValueType.Formula)));
   });
 
@@ -93,8 +105,36 @@ describe('营业报表 Excel', () => {
     expect(filename).toMatch(/^空展会-营业报表-.*\.xlsx$/);
     const book = new ExcelJS.Workbook();
     await book.xlsx.load(bytes as unknown as ExcelJS.Buffer);
-    expect(book.getWorksheet('商品销售')!.getCell('A7').value).toBe('本场暂无记录');
-    expect(book.getWorksheet('营业总览')!.getCell('B7').value).toBe(0);
+    expect(book.getWorksheet('商品销售')!.getCell('A6').value).toBe('本场暂无记录');
+    expect(book.getWorksheet('营业总览')!.getCell('A6').value).toBe(0);
+  });
+
+  it('实际盘点零现金与尚未盘点不同', async () => {
+    const { eventId } = await setup('CNY');
+    await settleEvent(eventId, 0, null);
+    const book = await createReportWorkbook(await collectReport(eventId));
+    const bytes = await book.xlsx.writeBuffer();
+    const saved = new ExcelJS.Workbook();
+    await saved.xlsx.load(bytes);
+    expect(saved.getWorksheet('营业总览')!.getCell('F19').value).toBe(0);
+    expect(saved.getWorksheet('营业总览')!.getCell('F20').value).toBe(0);
+  });
+
+  it('总览只列前五名，完整商品记录与长商品名保留在明细', async () => {
+    const { eventId } = await setup('CNY');
+    const data = await collectReport(eventId);
+    const ranking = data.tables.find(t => t.name === '商品销售')!;
+    const longName = '很长的商品名'.repeat(10);
+    ranking.rows = Array.from({ length: 6 }, (_, i) => [i === 0 ? longName : `商品 ${i + 1}`, '规格', `000${i}`, 1, 100 - i, 0]);
+    const book = await createReportWorkbook(data);
+    const saved = new ExcelJS.Workbook();
+    await saved.xlsx.load(await book.xlsx.writeBuffer());
+    expect(saved.getWorksheet('营业总览')!.getCell('A26').value).toBe(`${longName} / 规格`);
+    expect(saved.getWorksheet('营业总览')!.getRow(26).height).toBeGreaterThan(40);
+    expect(saved.getWorksheet('营业总览')!.getCell('A30').value).toBe('商品 5 / 规格');
+    expect(saved.getWorksheet('商品销售')!.getCell('A11').value).toBe('商品 6');
+    expect(saved.getWorksheet('商品销售')!.getCell('C6').value).toBe('0000');
+    expect(saved.getWorksheet('商品销售')!.autoFilter).toEqual('A5:F11');
   });
 
   it('时间按展会时区转换，文本标识不会被当成金额', () => {
@@ -175,7 +215,7 @@ describe('营业报表 Excel', () => {
     // 已移出本场的行仍然列出（货还在箱子里），但不再是「在场」
     const book = await createReportWorkbook(await collectReport(eventId));
     const sheet = book.getWorksheet('库存')!;
-    expect(sheet.getCell('D7').value).toBeDefined();
+    expect(sheet.getCell('D6').value).toBeDefined();
     expect(sheet.columnCount).toBe(8);
   });
 });
