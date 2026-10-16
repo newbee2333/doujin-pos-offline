@@ -69,10 +69,10 @@ export default function StaffBackupPage() {
           导出为标准 SQLite 文件，包含商品、图片、收款码、展会配置、库存、订单、收款、退款、纠错与现金流水。
           导出时会暂停新的写入并等待当前事务完成，生成一致快照。
         </p>
-        {/* 按钮文案是「导出 SQLite」而不是卡片标题：几个验收脚本和 CI 按这个取按钮。 */}
+        {/* 按钮文案是「导出数据库」而不是卡片标题：几个验收脚本和 CI 按这个取按钮。 */}
         <SaveDatabase
           eventName={event.data?.name}
-          label="导出 SQLite"
+          label="导出数据库"
           reloadKey={savedAt}
           onSaved={() => {
             backup.reload();
@@ -159,7 +159,7 @@ export default function StaffBackupPage() {
           <div className="notice danger">
             <strong>这台设备还没有确认保存过任何备份。</strong>
             新建之后，界面上不会再有打开现在这个库的入口——能把你带回来的只有你自己导出的那份文件。
-            请先用上面的「导出 SQLite」导出一份，在平板的「文件」里确认后再回来。
+            请先用上面的「导出数据库」导出一份，在平板的「文件」里确认后再回来。
           </div>
         )}
 

@@ -270,9 +270,9 @@ check('新库里能商品进场', (await bodyText()).includes('《新库测试�
 await gotoStaff('staff/backup');
 const [download] = await Promise.all([
   page.waitForEvent('download', { timeout: 20000 }).catch(() => null),
-  page.getByRole('button', { name: '导出 SQLite' }).click()
+  page.getByRole('button', { name: '导出数据库' }).click()
 ]);
-check('新库里能正常导出 SQLite', !!download, download ? download.suggestedFilename() : '没触发下载');
+check('新库里能正常导出数据库', !!download, download ? download.suggestedFilename() : '没触发下载');
 
 // download 事件在 a.click() 那一刻就触发，而「我确认已保存」要等 exportDatabase
 // 整个 await 链（含写 backup.last_export_at）走完才渲染出来 —— 这里必须等它出现，

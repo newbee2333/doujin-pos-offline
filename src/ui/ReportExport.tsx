@@ -77,6 +77,6 @@ export default function ReportExport({ eventId, eventName }: { eventId: string; 
       </label>
       <button className="small" disabled={busy} onClick={() => void run('csv')}>导出所选 CSV</button>
     </details>
-    <p className="tiny muted" style={{ marginTop: 'var(--sp-3)' }}>报表用于阅读与分析，不能恢复营业数据。完整备份请到「备份恢复」导出 SQLite。</p>
+    <p className="tiny muted" style={{ marginTop: 'var(--sp-3)' }}>报表用于阅读与分析，不能恢复营业数据。完整备份请到「备份恢复」导出数据库。</p>
   </section>;
 }
