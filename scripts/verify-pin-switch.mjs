@@ -1,5 +1,5 @@
 /**
- * 「确认需输 PIN」开关的端到端验证。
+ * 「确认需输密码」开关的端到端验证。
  *
  * 覆盖两条路径：
  *  A. 关闭 PIN → 游客提交订单后，摊主直接看到处理界面（无「请摊主处理」、无 PIN 键盘）
@@ -24,7 +24,7 @@ async function gotoStaff(path) {
   await page.goto(BASE + path, { waitUntil: 'networkidle' });
   await page.waitForTimeout(700);
   const needs =
-    (await page.getByText('设置后台 PIN').count()) || (await page.getByText('请输入后台 PIN').count());
+    (await page.getByText('设置后台密码').count()) || (await page.getByText('请输入后台密码').count());
   if (needs) {
     for (const d of ['1', '2', '3', '4']) {
       await page.locator('button', { hasText: new RegExp(`^${d}$`) }).first().click();
@@ -39,11 +39,11 @@ async function setPinRequired(required) {
   const row = page
     .locator('div.row')
     .filter({ hasText: '现金' })
-    .filter({ has: page.getByText('确认需输 PIN') })
+    .filter({ has: page.getByText('确认需输密码') })
     .first();
-  const toggle = row.locator('label.check').filter({ hasText: '确认需输 PIN' }).locator('input');
+  const toggle = row.locator('label.check').filter({ hasText: '确认需输密码' }).locator('input');
   if (!(await toggle.count())) {
-    fail('定位 PIN 开关', '在支付方式行里找不到「确认需输 PIN」复选框');
+    fail('定位 PIN 开关', '在支付方式行里找不到「确认需输密码」复选框');
     return false;
   }
   const current = await toggle.isChecked();
@@ -53,7 +53,7 @@ async function setPinRequired(required) {
   }
   const now = await page.evaluate(() => {
     const el = [...document.querySelectorAll('label.check')].find((l) =>
-      l.textContent?.includes('确认需输 PIN')
+      l.textContent?.includes('确认需输密码')
     );
     const input = el ? el.querySelector('input') : null;
     return input ? input.checked : undefined;

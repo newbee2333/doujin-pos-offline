@@ -25,7 +25,7 @@ await page.waitForTimeout(700);
 // 跳到展会配置
 await page.goto(BASE + 'staff/events', { waitUntil: 'networkidle' });
 await page.waitForTimeout(700);
-if (await page.getByText('设置后台 PIN').count()) {
+if (await page.getByText('设置后台密码').count()) {
   for (const d of ['1', '2', '3', '4']) {
     await page.locator('button', { hasText: new RegExp(`^${d}$`) }).first().click();
   }

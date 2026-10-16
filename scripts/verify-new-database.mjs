@@ -73,8 +73,8 @@ async function tapPin() {
 async function gotoStaff(path) {
   await page.goto(BASE + path, { waitUntil: 'networkidle' });
   await page.waitForTimeout(900);
-  const setup = await page.getByText('设置后台 PIN').count();
-  const unlock = await page.getByText('请输入后台 PIN').count();
+  const setup = await page.getByText('设置后台密码').count();
+  const unlock = await page.getByText('请输入后台密码').count();
   if (!setup && !unlock) return;
   if (setup) await tapPin();
   await tapPin();
@@ -185,8 +185,8 @@ check(
   (await importCard().getByRole('button', { name: '保存当前数据库' }).count()) === 1
 );
 check(
-  '保存入口排在「选择 SQLite 文件恢复」之前',
-  await saveBlockBefore(importCard(), '选择 SQLite 文件恢复')
+  '保存入口排在「选择备份文件恢复」之前',
+  await saveBlockBefore(importCard(), '选择备份文件恢复')
 );
 
 const ackSaved = newDbPanel().locator('label.check').filter({ hasText: '保存到这台设备之外' }).locator('input');
@@ -270,9 +270,9 @@ check('新库里能商品进场', (await bodyText()).includes('《新库测试�
 await gotoStaff('staff/backup');
 const [download] = await Promise.all([
   page.waitForEvent('download', { timeout: 20000 }).catch(() => null),
-  page.getByRole('button', { name: '导出 SQLite' }).click()
+  page.getByRole('button', { name: '导出数据库' }).click()
 ]);
-check('新库里能正常导出 SQLite', !!download, download ? download.suggestedFilename() : '没触发下载');
+check('新库里能正常导出数据库', !!download, download ? download.suggestedFilename() : '没触发下载');
 
 // download 事件在 a.click() 那一刻就触发，而「我确认已保存」要等 exportDatabase
 // 整个 await 链（含写 backup.last_export_at）走完才渲染出来 —— 这里必须等它出现，
@@ -326,7 +326,7 @@ const selfDump = `${OUT}/ui11-self-export.sqlite3`;
 let staged = false;
 if (download) {
   await download.saveAs(selfDump);
-  await page.getByRole('button', { name: '选择 SQLite 文件恢复' }).click();
+  await page.getByRole('button', { name: '选择备份文件恢复' }).click();
   await page.waitForTimeout(700);
   await page.locator('input[type="file"]').first().setInputFiles(selfDump);
   await page.waitForTimeout(2800);

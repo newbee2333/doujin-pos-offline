@@ -219,7 +219,7 @@ try {
   // 导出
   await go('staff/backup');
   const dl = page.waitForEvent('download', { timeout: 180000 });
-  await page.getByRole('button', { name: '导出 SQLite' }).first().click();
+  await page.getByRole('button', { name: '导出数据库' }).first().click();
   const download = await dl;
   mkdirSync(dirname(OUT), { recursive: true });
   const tmp = await download.path();

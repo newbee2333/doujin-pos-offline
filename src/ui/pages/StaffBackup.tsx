@@ -67,12 +67,12 @@ export default function StaffBackupPage() {
         <h2>保存当前数据库</h2>
         <p className="small muted">
           导出为标准 SQLite 文件，包含商品、图片、收款码、展会配置、库存、订单、收款、退款、纠错与现金流水。
-          导出时会暂停新的写入并等待当前事务完成，生成一致快照。
+          导出期间会短暂暂停保存新操作，等待当前保存完成，确保备份数据完整。
         </p>
-        {/* 按钮文案是「导出 SQLite」而不是卡片标题：几个验收脚本和 CI 按这个取按钮。 */}
+        {/* 按钮文案是「导出数据库」而不是卡片标题：几个验收脚本和 CI 按这个取按钮。 */}
         <SaveDatabase
           eventName={event.data?.name}
-          label="导出 SQLite"
+          label="导出数据库"
           reloadKey={savedAt}
           onSaved={() => {
             backup.reload();
@@ -102,18 +102,21 @@ export default function StaffBackupPage() {
 
       <div className="card">
         <h2>数据库状态</h2>
+        <details>
+        <summary>查看技术详情</summary>
         <dl className="kv">
-          <dt>数据集标识</dt>
+          <dt>数据库编号</dt>
           <dd className="tiny">{status.data?.datasetId ?? dbStatus?.datasetId ?? '—'}</dd>
-          <dt>schema 版本</dt>
+          <dt>文件格式版本</dt>
           <dd>{status.data?.schemaVersion ?? dbStatus?.schemaVersion ?? '—'}</dd>
-          <dt>revision</dt>
+          <dt>数据修订号</dt>
           <dd>{status.data?.revision ?? dbStatus?.revision ?? '—'}</dd>
           <dt>槽位</dt>
           <dd>{status.data?.slot ?? dbStatus?.slot ?? '—'}</dd>
           <dt>应用版本</dt>
           <dd>{status.data?.appVersion ?? '—'}</dd>
         </dl>
+        </details>
       </div>
 
       <div className="card">
@@ -139,7 +142,7 @@ export default function StaffBackupPage() {
         />
 
         <div className="row" style={{ marginTop: 12 }}>
-          <button onClick={() => setShowImport(true)}>选择 SQLite 文件恢复</button>
+          <button onClick={() => setShowImport(true)}>选择备份文件恢复</button>
         </div>
       </div>
 
@@ -159,7 +162,7 @@ export default function StaffBackupPage() {
           <div className="notice danger">
             <strong>这台设备还没有确认保存过任何备份。</strong>
             新建之后，界面上不会再有打开现在这个库的入口——能把你带回来的只有你自己导出的那份文件。
-            请先用上面的「导出 SQLite」导出一份，在平板的「文件」里确认后再回来。
+            请先用上面的「导出数据库」导出一份，在平板的「文件」里确认后再回来。
           </div>
         )}
 
@@ -190,9 +193,9 @@ export default function StaffBackupPage() {
 
             <div className="small muted">即将丢下的数据</div>
             <dl className="kv">
-              <dt>数据集</dt>
+              <dt>数据库编号</dt>
               <dd className="tiny">{nudge.data?.current.datasetId ?? '—'}</dd>
-              <dt>revision</dt>
+              <dt>数据修订号</dt>
               <dd>{nudge.data?.current.revision ?? '—'}</dd>
               <dt>展会</dt>
               <dd>{nudge.data?.current.eventCount ?? '—'} 场</dd>

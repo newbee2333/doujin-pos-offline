@@ -970,7 +970,7 @@ function EventDetail({
                   />
                   模板启用
                 </label>
-                <label className="check" title="关闭后，游客下单时摊主直接点确认即可，无需输入 PIN">
+                <label className="check" title="关闭后，游客下单时摊主直接点确认即可，无需输入后台密码">
                   <input
                     type="checkbox"
                     checked={pinFor[m.id] ?? m.confirm_requires_pin === 1}
@@ -986,7 +986,7 @@ function EventDetail({
                       }
                     }}
                   />
-                  确认需输 PIN
+                  确认需输密码
                 </label>
                 {m.type === 'qr_payment' ? (
                   <div style={{ flex: 1, minWidth: 220 }}>

@@ -79,7 +79,7 @@ export default function SetupPage({
         {firstLaunch ? (
           <p className="small muted">
             展会数据全部保存在这台设备的浏览器存储里，不上传服务器。可以先建立空库在电脑上录入商品，
-            也可以直接导入之前导出的 SQLite 文件。
+            也可以选择之前导出的数据库备份文件恢复。
           </p>
         ) : null}
 
@@ -92,7 +92,7 @@ export default function SetupPage({
           </div>
 
           <label className="field">
-            <span>选择 SQLite 文件（.sqlite3 / .db）</span>
+            <span>选择备份文件（.sqlite3 / .db）</span>
             {/*
               accept 按平台给：
               Android 上裸 input 会退化成媒体选择器（只有拍照/相册，没有「文件」入口），
@@ -125,9 +125,9 @@ export default function SetupPage({
                 <div>
                   <div className="small muted">当前设备数据</div>
                   <dl className="kv">
-                    <dt>数据集</dt>
+                    <dt>数据库编号</dt>
                     <dd className="tiny">{preview.current.datasetId ?? '—'}</dd>
-                    <dt>revision</dt>
+                    <dt>数据修订号</dt>
                     <dd>{preview.current.revision}</dd>
                     <dt>订单数</dt>
                     <dd>{preview.current.orderCount}（成交 {preview.current.completedOrderCount}）</dd>
@@ -136,9 +136,9 @@ export default function SetupPage({
                 <div>
                   <div className="small muted">待导入（{fileName}）</div>
                   <dl className="kv">
-                    <dt>数据集</dt>
+                    <dt>数据库编号</dt>
                     <dd className="tiny">{preview.candidate.datasetId ?? '—'}</dd>
-                    <dt>revision</dt>
+                    <dt>数据修订号</dt>
                     <dd>{preview.candidate.revision}</dd>
                     <dt>订单数</dt>
                     <dd>
@@ -160,7 +160,7 @@ export default function SetupPage({
               ))}
               {preview.candidate.migratedFrom !== null ? (
                 <div className="notice info" style={{ marginTop: 8 }}>
-                  该文件来自旧 schema {preview.candidate.migratedFrom}，已迁移到当前版本。
+                  该备份的文件格式版本为 {preview.candidate.migratedFrom}，已自动升级为当前格式。
                 </div>
               ) : null}
 

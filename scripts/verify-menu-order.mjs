@@ -1,0 +1,91 @@
+import { chromium } from 'playwright';
+import assert from 'node:assert/strict';
+import { mkdirSync } from 'node:fs';
+const browser = await chromium.launch({ channel: 'msedge' });
+const ctx = await browser.newContext({ viewport: { width: 1180, height: 820 }, hasTouch: true });
+const page = await ctx.newPage();
+const errors = [];
+page.on('pageerror', e => errors.push(e.message));
+ctx.on('dialog', d => d.accept());
+const ids = () => page.locator('[data-order-id]').evaluateAll(nodes => nodes.map(node => node.dataset.orderId));
+try {
+  await page.goto(process.env.SMOKE_BASE ?? 'http://127.0.0.1:5201/');
+  await page.getByRole('button', { name: '建立新的空数据库', exact: true }).click();
+  await page.locator('.sidebar').waitFor();
+  const eventId = await page.evaluate(async () => {
+    const e = await import('/src/services/events.ts');
+    const c = await import('/src/services/catalog.ts');
+    const s = await import('/src/store.ts');
+    const system = await import('/src/services/system.ts');
+    const id = await e.createEvent({ name: '菜单排序测试', currency: 'CNY' });
+    for (let i = 0; i < 24; i++) {
+      const p = await c.createProduct({ name: `排序商品 ${String(i).padStart(2, '0')}`, type: 'non_stock', default_currency: 'CNY', default_price_minor: 100 });
+      await e.addVariantsToEvent(id, [p.variantId]);
+    }
+    await system.setPin('1234');
+    await system.setCurrentEventId(id);
+    s.useApp.getState().setCurrentEvent(id);
+    s.useApp.getState().unlockStaff();
+    return id;
+  });
+  await page.locator('.sidebar a[href="/preview"]').click();
+  await page.getByRole('button', { name: '调整顺序', exact: true }).click();
+  const original = await ids();
+  assert.equal(original.length, 24);
+  const first = await page.locator('[data-order-id]').nth(0).boundingBox();
+  const third = await page.locator('[data-order-id]').nth(2).boundingBox();
+  await page.mouse.move(first.x + first.width / 2, first.y + 60);
+  await page.mouse.down();
+  await page.waitForTimeout(500);
+  assert.equal(await page.locator('.dragging').count(), 1);
+  await page.mouse.move(third.x + third.width / 2, third.y + 60, { steps: 8 });
+  await page.waitForTimeout(100);
+  await page.mouse.up();
+  assert.notDeepEqual(await ids(), original);
+  await page.getByRole('button', { name: '取消', exact: true }).click();
+  await page.getByRole('button', { name: '调整顺序', exact: true }).click();
+  assert.deepEqual(await ids(), original, 'cancel must discard draft');
+  // Drag at the lower edge must scroll beyond the initially visible rows.
+  const rect = await page.locator('.menu-order-scroll').boundingBox();
+  const start = await page.locator('[data-order-id]').first().boundingBox();
+  await page.mouse.move(start.x + 50, start.y + 55);
+  await page.mouse.down();
+  await page.waitForTimeout(500);
+  await page.mouse.move(rect.x + 60, rect.y + rect.height - 12, { steps: 6 });
+  await page.waitForTimeout(500);
+  await page.mouse.up();
+  assert.ok(await page.locator('.menu-order-scroll').evaluate(node => node.scrollTop) > 0, 'edge scroll');
+  await page.getByRole('button', { name: '取消', exact: true }).click();
+  await page.getByRole('button', { name: '调整顺序', exact: true }).click();
+  // Real touch events exercise the same long-press gesture on a touch screen.
+  const touch = await ctx.newCDPSession(page);
+  const a = await page.locator('[data-order-id]').nth(0).boundingBox();
+  const b = await page.locator('[data-order-id]').nth(1).boundingBox();
+  await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: a.x + 50, y: a.y + 55 }] });
+  await page.waitForTimeout(500);
+  await touch.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: b.x + 50, y: b.y + 55 }] });
+  await page.waitForTimeout(100);
+  await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  assert.notDeepEqual(await ids(), original, 'touch drag');
+  await ctx.setOffline(true);
+  await page.getByRole('button', { name: /^后移 / }).first().click();
+  await page.getByRole('button', { name: /^后移 / }).nth(1).click();
+  const expected = await ids();
+  assert.notDeepEqual(expected, original, 'save must persist a changed order');
+  await page.getByRole('button', { name: '保存顺序', exact: true }).click();
+  await page.locator('.menu-order').waitFor({ state: 'detached' });
+  // Dev-module imports require a network; the save above completed while offline.
+  await ctx.setOffline(false);
+  const saved = await page.evaluate(async id => (await (await import('/src/services/orders.ts')).getKioskMenu(id)).map(item => item.variant_id), eventId);
+  assert.deepEqual(saved, expected);
+  await page.reload();
+  await page.locator('.pin-keys').waitFor();
+  for (const n of '1234') await page.locator(`.pin-digit:text-is("${n}")`).click();
+  await page.locator('.pin-actions button.primary').click();
+  await page.getByRole('button', { name: '调整顺序', exact: true }).click();
+  assert.deepEqual(await ids(), expected, 'reload preserves order');
+  mkdirSync('test-results', { recursive: true });
+  await page.screenshot({ path: 'test-results/menu-order.png' });
+  assert.deepEqual(errors, []);
+  console.log('PASS: long press drag, cancel, offline save, reload and PIN');
+} finally { await browser.close(); }

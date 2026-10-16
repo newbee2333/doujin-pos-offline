@@ -46,7 +46,7 @@ function BootScreen() {
     <div className="center-page">
       <div className="card">
         <h2>正在准备离线数据库</h2>
-        <p className="muted small">检查浏览器能力、持久化与存储权限，并打开本地 SQLite。</p>
+        <p className="muted small">正在检查浏览器和持久化状态，并打开本机数据库。</p>
         {error ? <ErrorBox message={error} /> : <Spinner label="检查中…" />}
         {diagnostics.capabilities?.details?.length ? (
           <ul className="small muted" style={{ textAlign: 'left' }}>
@@ -67,6 +67,9 @@ function BlockedScreen() {
     <div className="center-page">
       <div className="card">
         <h2>当前环境不能营业</h2>
+        <p className="small muted">当前打开方式或浏览器不支持本机数据保存。请通过正式发布链接打开应用；仍无法使用时，可展开技术详情提供给维护者排查。</p>
+        <details>
+        <summary>查看技术详情</summary>
         <p className="small muted">
           本应用需要安全上下文、WebAssembly、OPFS 与跨源隔离（SharedArrayBuffer）。
           请使用 HTTPS 或 localhost 打开，并确认服务端返回 COOP/COEP 响应头。
@@ -99,6 +102,7 @@ function BlockedScreen() {
             </tr>
           </tbody>
         </table>
+        </details>
       </div>
     </div>
   );
@@ -232,9 +236,9 @@ function StaffGuard({ children }: { children: React.ReactNode }) {
     return (
       <div className="center-page">
         <div className="card">
-          <h2>设置后台 PIN</h2>
+          <h2>设置后台密码</h2>
           <p className="small muted">
-            PIN 用于防止游客误触后台，不是强安全认证。请勿在 URL 中传递，也不要用生日等易猜数字。
+            后台密码为 4～8 位数字，用于防止游客误触后台，不能代替设备锁屏密码。请妥善保管。
           </p>
           <ErrorBox message={error} />
           {/* 首次设置也走「输两遍」。按错一位当场就能发现，
@@ -260,7 +264,7 @@ function StaffGuard({ children }: { children: React.ReactNode }) {
   return (
     <div className="center-page">
       <div className="card">
-        <h2>请输入后台 PIN</h2>
+        <h2>请输入后台密码</h2>
         <PinPad
           error={error}
           onSubmit={async (pin) => {
@@ -269,7 +273,7 @@ function StaffGuard({ children }: { children: React.ReactNode }) {
               setError(null);
               unlockStaff();
             } else {
-              setError('PIN 不正确');
+              setError('后台密码不正确');
             }
           }}
         />

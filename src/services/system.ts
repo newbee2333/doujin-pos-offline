@@ -64,7 +64,7 @@ export async function isPinSet(): Promise<boolean> {
 }
 
 export async function setPin(pin: string): Promise<void> {
-  if (!/^\d{4,8}$/.test(pin)) throw new DomainError('PIN 请设置为 4 到 8 位数字');
+  if (!/^\d{4,8}$/.test(pin)) throw new DomainError('后台密码请设置为 4 到 8 位数字');
   const salt =
     (await getSetting(PIN_SALT_KEY)) ??
     Array.from(globalThis.crypto.getRandomValues(new Uint8Array(8)), (b) => b.toString(16).padStart(2, '0')).join('');
@@ -182,7 +182,7 @@ export async function stageImport(bytes: Uint8Array): Promise<ReplacePreview> {
   const candidate = await db.importStage(bytes);
   const warnings: string[] = [];
   if (candidate.datasetId !== current.datasetId) {
-    warnings.push('这是另一个数据集，整库替换会覆盖当前设备上的全部营业数据');
+    warnings.push('这份备份来自另一个数据库，恢复后会覆盖当前设备上的全部营业数据');
   } else if (candidate.revision < current.revision) {
     warnings.push('待导入的副本比当前数据更旧，当前设备上的新成交可能被覆盖');
   } else {

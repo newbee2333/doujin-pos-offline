@@ -5,6 +5,7 @@ import { formatMoney } from '../../domain/money';
 import { useApp } from '../../store';
 import { ErrorBox, Spinner, useAsync } from '../components';
 import MenuCard from '../MenuCard';
+import MenuOrder from '../MenuOrder';
 
 const FRAMES = [
   { key: 'ipad-landscape', label: '平板横屏 1180×820', width: 1180, height: 820 },
@@ -18,6 +19,7 @@ const FRAMES = [
  */
 export default function PreviewPage() {
   const eventId = useApp((s) => s.currentEventId);
+  const unlocked = useApp((s) => s.staffUnlocked);
   const [frameIdx, setFrameIdx] = useState(0);
   const [keyword, setKeyword] = useState('');
   // 分类胶囊必须是能点的 —— 预览的用处就是「按游客的方式翻一遍」，
@@ -25,6 +27,7 @@ export default function PreviewPage() {
   // 选中态与过滤口径都跟游客菜单（KioskMenu）保持一致，别在这里再写一套。
   const [category, setCategory] = useState('');
   const [cartCount, setCartCount] = useState(0);
+  const [sorting, setSorting] = useState(false);
 
   const menu = useAsync(() => (eventId ? getKioskMenu(eventId) : Promise.resolve([])), [eventId]);
   const cats = useAsync(() => listCategories(false), []);
@@ -57,6 +60,7 @@ export default function PreviewPage() {
       <div className="row">
         <h1 style={{ margin: 0 }}>菜单预览</h1>
         <span className="spacer" />
+        <button disabled={!menu.data?.length || !unlocked} title={unlocked ? '调整本场游客菜单的商品顺序' : '请先解锁后台再调整顺序'} onClick={() => setSorting(true)}>调整顺序</button>
         <select value={frameIdx} onChange={(e) => setFrameIdx(Number(e.target.value))} style={{ maxWidth: 260 }}>
           {FRAMES.map((f, i) => (
             <option key={f.key} value={i}>
@@ -65,6 +69,7 @@ export default function PreviewPage() {
           ))}
         </select>
       </div>
+      {sorting && unlocked && menu.data ? <MenuOrder key={eventId} eventId={eventId} items={menu.data} onClose={() => setSorting(false)} onSaved={() => { setSorting(false); menu.reload(); }} /> : null}
       <p className="small muted">
         预览使用本场真实商品配置，但不会产生订单、收款或库存变化。共 {filtered.length} 个规格 ·{' '}
         {cats.data?.length ?? 0} 个可见分类。

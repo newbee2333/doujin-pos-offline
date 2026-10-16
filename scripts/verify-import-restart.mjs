@@ -97,7 +97,7 @@ try {
   await gotoStaff(pageA, 'staff/backup');
   const [download] = await Promise.all([
     pageA.waitForEvent('download', { timeout: 30000 }).catch(() => null),
-    pageA.getByRole('button', { name: /导出 SQLite/ }).first().click()
+    pageA.getByRole('button', { name: /导出数据库/ }).first().click()
   ]);
 
   let exportedPath = null;

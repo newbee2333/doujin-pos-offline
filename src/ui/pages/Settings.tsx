@@ -24,7 +24,7 @@ export default function SettingsPage() {
       <div className="card">
         <h2>安全与访问</h2>
         <p className="small muted">
-          PIN 只用于防止游客误触后台，不是对设备持有者的强安全认证。不要通过 URL 传递。
+          后台密码为 4～8 位数字，用于防止游客误触后台，不能代替设备锁屏密码。请妥善保管。
         </p>
         {pinSet.loading ? (
           <Spinner label="读取…" />
@@ -32,12 +32,12 @@ export default function SettingsPage() {
           <div className="col">
             <div className="row">
               <button onClick={() => setMode('new')}>
-                {pinSet.data ? '修改后台 PIN' : '设置后台 PIN'}
+                {pinSet.data ? '修改后台密码' : '设置后台密码'}
               </button>
               <span className="tiny muted">改完不会把你踢出去，下次进入后台时生效。</span>
             </div>
             <p className="tiny muted" style={{ margin: 0 }}>
-              忘记 PIN 没有自助找回的办法：一旦忘了就进不去后台，只能清空本站数据重来
+              忘记后台密码没有自助找回的办法：一旦忘了就进不去后台，只能清空本站数据重来
               （商品和订单会一起没掉）。所以请先用上面的按钮把它改成一个你记得住的数字，
               并把导出备份养成习惯。
             </p>
@@ -59,7 +59,7 @@ export default function SettingsPage() {
                   setError(null);
                   setMode('none');
                   pinSet.reload();
-                  showToast('PIN 已更新，下次进入后台时生效');
+                  showToast('后台密码已更新，下次进入后台时生效');
                 } catch (e) {
                   setError(errorMessage(e));
                 }
@@ -90,13 +90,17 @@ export default function SettingsPage() {
             {persisted.data?.usageBytes != null ? formatBytes(persisted.data.usageBytes) : '—'} /{' '}
             {persisted.data?.quotaBytes != null ? formatBytes(persisted.data.quotaBytes) : '—'}
           </dd>
-          <dt>OPFS</dt>
-          <dd>{caps.data?.opfs ?? diagnostics.capabilities?.opfs ? '可用' : '不可用'}</dd>
-          <dt>跨源隔离</dt>
-          <dd>{caps.data?.crossOriginIsolated ?? diagnostics.capabilities?.crossOriginIsolated ? '已启用' : '未启用'}</dd>
           <dt>受限营业</dt>
           <dd>{limited ? '是（请频繁导出备份）' : '否'}</dd>
         </dl>
+        <details>
+          <summary>查看技术详情</summary>
+          <dl className="kv">
+            <dt>OPFS</dt>
+            <dd>{caps.data?.opfs ?? diagnostics.capabilities?.opfs ? '可用' : '不可用'}</dd>
+            <dt>跨源隔离</dt>
+            <dd>{caps.data?.crossOriginIsolated ?? diagnostics.capabilities?.crossOriginIsolated ? '已启用' : '未启用'}</dd>
+          </dl>
         {(caps.data?.details?.length ?? 0) > 0 ? (
           <div className="notice">
             {(caps.data?.details ?? []).map((d) => (
@@ -104,6 +108,7 @@ export default function SettingsPage() {
             ))}
           </div>
         ) : null}
+        </details>
         <p className="tiny muted" style={{ marginBottom: 0 }}>
           持久化获批不等于数据绝不丢失，它不能代替设备外的备份文件。
         </p>

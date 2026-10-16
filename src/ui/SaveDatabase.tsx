@@ -5,7 +5,7 @@
  * 新建空数据库的确认面板、导入的确认替换面板 —— 一份实现四个入口，
  * 免得哪天只改了其中一处。
  *
- * 按钮默认文案是「保存当前数据库」，但顶部那张卡传进来的是「导出 SQLite」：
+ * 按钮默认文案是「保存当前数据库」，但顶部那张卡传进来的是「导出数据库」：
  * 几个验收脚本和 CI 按这个文案取按钮，不能改。
  *
  * 导出与「我确认已保存」刻意分成两步：浏览器发起下载 ≠ 文件真的落盘。
@@ -104,7 +104,7 @@ export default function SaveDatabase({
 
       <p className="tiny muted" style={{ marginTop: 'var(--sp-2)', marginBottom: 0 }}>
         {bytes
-          ? `已生成 ${file}（${formatBytes(bytes.length)}）。浏览器发起下载不等于文件一定落盘成功，请在平板的「文件」里确认后再点「我确认已保存」。`
+          ? `已生成 ${file}（${formatBytes(bytes.length)}）。浏览器发起下载不等于文件一定保存成功，请在平板的「文件」里确认后再点「我确认已保存」。`
           : state.data?.lastConfirmedSavedAt
             ? `最近确认保存：${new Date(state.data.lastConfirmedSavedAt).toLocaleString('zh-CN')}。`
             : '这台设备还没有确认保存过备份。'}

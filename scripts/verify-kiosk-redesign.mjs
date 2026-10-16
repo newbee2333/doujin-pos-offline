@@ -41,10 +41,10 @@ async function gotoStaff(path) {
   } catch {
     return;
   }
-  // 首次是「设置后台 PIN」要连输两遍（第一遍设置 + 第二遍确认），之后是解锁一遍。
+  // 首次是「设置后台密码」要连输两遍（第一遍设置 + 第二遍确认），之后是解锁一遍。
   // 这个脚本原来只打一遍，设 PIN 那一步会卡在第二遍的界面上，
   // 后续找不到「新建展会」而超时 —— 是脚本没跟上两遍式改动，不是应用的问题。
-  const needsSetup = await page.getByText('设置后台 PIN').count();
+  const needsSetup = await page.getByText('设置后台密码').count();
   if (needsSetup) await tapPin();
   await tapPin();
   await page.waitForTimeout(1200);
