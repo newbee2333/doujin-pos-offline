@@ -6,6 +6,24 @@ import { newId, nowIso } from '../domain/ids';
 import { auditStep, ex } from './context';
 import { DomainError } from './catalog';
 
+/** Reorder the visible subset while preserving the slots of hidden products. */
+export async function saveMenuOrder(eventId: string, ids: string[]): Promise<void> {
+  if (!ids.length || new Set(ids).size !== ids.length) throw new DomainError('商品顺序无效');
+  const rows = await ex().read<{ variant_id: string }>(
+    `SELECT c.variant_id FROM event_variant_configs c JOIN product_variants v ON v.id=c.variant_id
+     JOIN products p ON p.id=v.product_id WHERE c.event_id=? ORDER BY c.sort_order, p.name, v.name`, [eventId]
+  );
+  const selected = new Set(ids);
+  if (ids.some(id => !rows.some(row => row.variant_id === id))) throw new DomainError('参展商品已变化，请重新打开排序');
+  let next = 0;
+  const steps: Step[] = [{ t: 'assert', sql: 'SELECT COUNT(*) FROM event_variant_configs WHERE event_id=?', params: [eventId], equals: rows.length, message: '参展商品已变化，请重新打开排序' }, ...rows.map((row, index): Step => ({
+    t: 'run', sql: 'UPDATE event_variant_configs SET sort_order=? WHERE event_id=? AND variant_id=?',
+    params: [index, eventId, selected.has(row.variant_id) ? ids[next++] : row.variant_id], expectChanges: 1
+  }))];
+  steps.push(auditStep('menu.reorder', 'event', eventId, { variantIds: ids }));
+  await ex().tx(steps);
+}
+
 export function listEvents(): Promise<Event[]> {
   return ex().read<Event>('SELECT * FROM events ORDER BY created_at DESC');
 }
