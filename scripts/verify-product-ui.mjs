@@ -40,8 +40,8 @@ async function tapPin() {
 async function gotoStaff(path) {
   await page.goto(BASE + path, { waitUntil: 'networkidle' });
   await page.waitForTimeout(700);
-  const setup = await page.getByText('设置后台 PIN').count();
-  const unlock = await page.getByText('请输入后台 PIN').count();
+  const setup = await page.getByText('设置后台密码').count();
+  const unlock = await page.getByText('请输入后台密码').count();
   if (!setup && !unlock) return;
   if (setup) await tapPin();
   await tapPin();
@@ -235,8 +235,8 @@ await shot('ui4-5-settings');
 await page.goto(BASE + 'help', { waitUntil: 'networkidle' });
 await page.waitForTimeout(1500);
 const helpText = await page.evaluate(() => document.body.innerText);
-check('说明书顶部已无「忘记后台 PIN」', !helpText.includes('忘记后台 PIN'));
-check('说明书正文仍有 9.2 忘了后台 PIN 一节', helpText.includes('忘了后台 PIN'));
+check('说明书顶部已无「忘记后台密码」', !helpText.includes('忘记后台密码'));
+check('说明书正文仍有 9.2 忘了后台密码 一节', helpText.includes('忘了后台密码'));
 await shot('ui4-6-help');
 
 console.log(`\n合计 ${pass} 通过 / ${fail} 失败`);

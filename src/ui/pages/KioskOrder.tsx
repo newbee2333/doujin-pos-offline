@@ -175,7 +175,7 @@ export default function KioskOrderPage() {
             <div className="card ord-staff">
               {pinMode ? (
                 <PinPad
-                  hint="摊主 PIN"
+                  hint="摊主密码"
                   error={pinError}
                   onCancel={() => setPinMode(false)}
                   onSubmit={async (pin) => {
@@ -183,7 +183,7 @@ export default function KioskOrderPage() {
                       setPinMode(false);
                       setPinError(null);
                       unlockStaff();
-                    } else setPinError('PIN 不正确');
+                    } else setPinError('后台密码不正确');
                   }}
                 />
               ) : (

@@ -59,12 +59,12 @@ const contentRows = [
   ['统一编辑商品（默认规格 字面量）', code.includes('默认规格')],
   ['信息气泡 InfoDot（精确库存问号）', code.includes('info-bubble') || style.includes('info-bubble')],
   // 自助重置整条删掉了（用户拍板）。断言方向因此反过来：
-  // bundle 里不该再出现任何重置界面的文案。「后台 PIN」这几个字仍会合理地出现在
+  // bundle 里不该再出现任何重置界面的文案。「后台密码」这几个字仍会合理地出现在
   // 设置页和手册里，那是正常的改 PIN 入口，不是这里的判据。
-  ['自助重置已删：无「重置后台 PIN」文案', !code.includes('重置后台 PIN')],
+  ['自助重置已删：无「重置后台密码」文案', !code.includes('重置后台密码')],
   ['自助重置已删：无「开始重置」按钮', !code.includes('开始重置')],
   ['自助重置已删：无确认文字门槛', !code.includes('确认是你在操作')],
-  ['PIN 仍可改（设置 → 安全与访问）', code.includes('修改后台 PIN')],
+  ['PIN 仍可改（设置 → 安全与访问）', code.includes('修改后台密码')],
   // 说明书正文来自 README，而 README 必须解释「库存展示已经不在设置里了」，
   // 所以这个短语会合理地出现在手册正文中。要断言的是：
   //   ① 设置页不再有那张卡片 —— 用卡片标题的相邻文案判断；
@@ -150,7 +150,7 @@ await declined.ctx.close();
 // 而是「它确实不再提供任何重置界面」—— 忘了 PIN 就没救了，这个状态必须被确认。
 // 单实例锁会让第二个标签页被拦，所以用独立 context 且先关掉上一个。
 const rec = await openApp('/recover', { confirmReturn: true });
-check('/recover 不再提供重置界面', !/重置后台 PIN|开始重置|确认是你在操作/.test(rec.text),
+check('/recover 不再提供重置界面', !/重置后台密码|开始重置|确认是你在操作/.test(rec.text),
   rec.text.trim().split('\n')[0]);
 check('/recover 无 JS 报错', rec.errors.length === 0, rec.errors.slice(0, 2).join(' | '));
 await rec.ctx.close();

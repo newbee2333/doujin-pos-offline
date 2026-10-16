@@ -77,7 +77,7 @@ for (const [path, label] of pages) {
   });
   const file = `scripts/skin-${path.replace(/\//g, '-')}.png`;
   await page.screenshot({ path: file, fullPage: false });
-  const locked = (info.text || '').includes('请输入后台 PIN') || (info.text || '').includes('设置后台 PIN');
+  const locked = (info.text || '').includes('请输入后台密码') || (info.text || '').includes('设置后台密码');
   console.log(`  ${label.padEnd(6)} bg=${info.bg} ink=${info.ink} card=${info.cardRadius} ${locked ? '❌ 仍在锁屏' : '✓ 已进页面'} | ${info.text}`);
 }
 

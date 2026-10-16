@@ -32,7 +32,7 @@ page.on('pageerror', (e) => errors.push(e.message));
 page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
 
 const path = () => page.evaluate(() => location.pathname);
-/** 首次进后台是「设置后台 PIN」，之后是「请输入后台 PIN」，两种都算锁着。 */
+/** 首次进后台是「设置后台密码」，之后是「请输入后台密码」，两种都算锁着。 */
 /**
  * 输 PIN 进后台。
  *
@@ -54,8 +54,8 @@ async function enterPin(page) {
 }
 
 const pinVisible = async () =>
-  (await page.locator('text=请输入后台 PIN').count()) > 0 ||
-  (await page.locator('text=设置后台 PIN').count()) > 0;
+  (await page.locator('text=请输入后台密码').count()) > 0 ||
+  (await page.locator('text=设置后台密码').count()) > 0;
 
 /** 侧边栏点击，不重载页面 */
 async function clickNav(name) {
@@ -101,7 +101,7 @@ try {
   dialogAction = 'dismiss';
   seenDialogs.length = 0;
   await clickNav('游客菜单');
-  if (seenDialogs.some((m) => m.includes('重新输入 PIN'))) ok('点游客菜单弹出二次确认');
+  if (seenDialogs.some((m) => m.includes('重新输入后台密码'))) ok('点游客菜单弹出二次确认');
   else fail('二次确认', `未捕获到确认框（${seenDialogs.length} 个 dialog）`);
 
   if ((await path()).startsWith('/kiosk')) fail('取消后仍跳转', await path());

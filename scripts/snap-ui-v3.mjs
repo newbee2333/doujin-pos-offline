@@ -40,13 +40,13 @@ async function tapPin() {
   await page.waitForTimeout(600);
 }
 
-/** 进后台。首次是「设置后台 PIN」——现在要求连输两遍；之后是「请输入后台 PIN」一遍。 */
+/** 进后台。首次是「设置后台密码」——现在要求连输两遍；之后是「请输入后台密码」一遍。 */
 async function gotoStaff(path, { skipAuth = false } = {}) {
   await page.goto(BASE + path, { waitUntil: 'networkidle' });
   await page.waitForTimeout(700);
   if (skipAuth) return;
-  const needsSetup = await page.getByText('设置后台 PIN').count();
-  const needsPin = await page.getByText('请输入后台 PIN').count();
+  const needsSetup = await page.getByText('设置后台密码').count();
+  const needsPin = await page.getByText('请输入后台密码').count();
   if (!needsSetup && !needsPin) return;
   if (needsSetup) await tapPin(); // 第一遍
   await tapPin(); // 设置时是第二遍确认，解锁时是唯一一遍
@@ -148,7 +148,7 @@ for (let i = 0; i < 3; i++) {
 await page.goto(BASE, { waitUntil: 'networkidle' });
 await page.waitForTimeout(600);
 await gotoStaff('staff/checkout', { skipAuth: true });
-const locked = await page.getByText('请输入后台 PIN').count();
+const locked = await page.getByText('请输入后台密码').count();
 if (locked) {
   await shot('ui3-1-pin-unlock');
 
@@ -165,7 +165,7 @@ if (locked) {
   await page.goto(BASE + 'help', { waitUntil: 'networkidle' });
   await page.waitForTimeout(900);
   await shot('ui3-1-help');
-  const helpEntry = await page.getByRole('button', { name: '重置后台 PIN' }).count();
+  const helpEntry = await page.getByRole('button', { name: '重置后台密码' }).count();
   console.log(`说明书中的恢复入口：${helpEntry === 0 ? '✅ 已移除' : '❌ 仍在'}`);
 
   // /recover 路由已删：应当落到兜底路由，而不是任何重置界面
@@ -173,7 +173,7 @@ if (locked) {
   await page.waitForTimeout(900);
   await shot('ui3-1a-recover-removed');
   const recText = (await page.evaluate(() => document.body.innerText)).replace(/\s+/g, ' ');
-  const stillReset = /重置后台 PIN|开始重置|确认是你在操作/.test(recText);
+  const stillReset = /重置后台密码|开始重置|确认是你在操作/.test(recText);
   console.log(
     `/recover 已删除检查：${stillReset ? '❌ 仍能进重置流程' : '✅ 无重置界面'}（落到：${recText.slice(0, 30)}…）`
   );
@@ -192,7 +192,7 @@ if (locked) {
 await gotoStaff('settings');
 await page.waitForTimeout(800);
 await shot('ui3-1d-settings-security');
-await page.getByRole('button', { name: '修改后台 PIN' }).click();
+await page.getByRole('button', { name: '修改后台密码' }).click();
 await page.waitForTimeout(400);
 await shot('ui3-1e-settings-setpin');
 await page.getByRole('button', { name: '返回' }).first().click();

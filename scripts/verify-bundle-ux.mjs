@@ -53,8 +53,8 @@ async function tapPin() {
 async function gotoStaff(path) {
   await page.goto(BASE + path, { waitUntil: 'networkidle' });
   await page.waitForTimeout(800);
-  const setup = await page.getByText('设置后台 PIN').count();
-  const unlock = await page.getByText('请输入后台 PIN').count();
+  const setup = await page.getByText('设置后台密码').count();
+  const unlock = await page.getByText('请输入后台密码').count();
   if (!setup && !unlock) return;
   if (setup) await tapPin();
   await tapPin();

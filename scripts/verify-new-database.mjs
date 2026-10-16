@@ -73,8 +73,8 @@ async function tapPin() {
 async function gotoStaff(path) {
   await page.goto(BASE + path, { waitUntil: 'networkidle' });
   await page.waitForTimeout(900);
-  const setup = await page.getByText('设置后台 PIN').count();
-  const unlock = await page.getByText('请输入后台 PIN').count();
+  const setup = await page.getByText('设置后台密码').count();
+  const unlock = await page.getByText('请输入后台密码').count();
   if (!setup && !unlock) return;
   if (setup) await tapPin();
   await tapPin();
@@ -185,8 +185,8 @@ check(
   (await importCard().getByRole('button', { name: '保存当前数据库' }).count()) === 1
 );
 check(
-  '保存入口排在「选择 SQLite 文件恢复」之前',
-  await saveBlockBefore(importCard(), '选择 SQLite 文件恢复')
+  '保存入口排在「选择备份文件恢复」之前',
+  await saveBlockBefore(importCard(), '选择备份文件恢复')
 );
 
 const ackSaved = newDbPanel().locator('label.check').filter({ hasText: '保存到这台设备之外' }).locator('input');
@@ -326,7 +326,7 @@ const selfDump = `${OUT}/ui11-self-export.sqlite3`;
 let staged = false;
 if (download) {
   await download.saveAs(selfDump);
-  await page.getByRole('button', { name: '选择 SQLite 文件恢复' }).click();
+  await page.getByRole('button', { name: '选择备份文件恢复' }).click();
   await page.waitForTimeout(700);
   await page.locator('input[type="file"]').first().setInputFiles(selfDump);
   await page.waitForTimeout(2800);

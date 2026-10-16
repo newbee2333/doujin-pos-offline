@@ -1,5 +1,5 @@
 /** 线上部署验证：响应头 + 新设计特征是否都在产物里。 */
-const base = 'https://doujin-pos-52877.app.workbuddy.host';
+const base = process.env.SMOKE_BASE ?? 'https://doujin-pos-offline.pages.dev';
 
 (async () => {
   const r = await fetch(base + '/');
@@ -20,7 +20,7 @@ const base = 'https://doujin-pos-52877.app.workbuddy.host';
     ['售罄覆盖层 sold-veil', code.includes('sold-veil') || style.includes('sold-veil')],
     ['减少动效 prefers-reduced-motion', style.includes('prefers-reduced-motion')],
     ['支付方式 PIN 开关 confirm_requires_pin', code.includes('confirm_requires_pin')],
-    ['开关文案 确认需输 PIN', code.includes('确认需输 PIN')]
+    ['开关文案 确认需输密码', code.includes('确认需输密码')]
   ];
   for (const [label, pass] of rows) {
     console.log('  ' + label.padEnd(30), pass ? '✅' : '❌');

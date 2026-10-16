@@ -18,7 +18,7 @@ const c = page.getByRole('button', { name: '建立新的空数据库' });
 if (await c.count()) { await c.click(); await page.waitForTimeout(700); }
 await page.goto(BASE + 'staff/events', { waitUntil: 'networkidle' });
 await page.waitForTimeout(800);
-if (await page.getByText('设置后台 PIN').count()) {
+if (await page.getByText('设置后台密码').count()) {
   for (const d of ['1', '2', '3', '4']) await page.locator('button', { hasText: new RegExp(`^${d}$`) }).first().click();
   await page.getByRole('button', { name: '确认' }).first().click();
   await page.waitForTimeout(900);

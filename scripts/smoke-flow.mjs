@@ -251,7 +251,7 @@ try {
   // 刷新后数据仍在（持久化）
   await page.reload({ waitUntil: 'networkidle' });
   await page.waitForTimeout(1500);
-  if (await page.getByText('请输入后台 PIN').count()) {
+  if (await page.getByText('请输入后台密码').count()) {
     for (const d of ['1', '2', '3', '4']) {
       await page.locator('button', { hasText: new RegExp(`^${d}$`) }).first().click();
     }

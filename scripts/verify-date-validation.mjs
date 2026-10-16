@@ -17,7 +17,7 @@ page.on('pageerror', (e) => errors.push(e.message));
 await page.goto(BASE, { waitUntil: 'domcontentloaded' });
 // 显式等应用就绪（最长 30s），比固定 sleep 稳
 await page.waitForFunction(
-  () => /建立新的空数据库|请输入后台 PIN|设置后台 PIN/.test(document.body.innerText || ''),
+  () => /建立新的空数据库|请输入后台密码|设置后台密码/.test(document.body.innerText || ''),
   null,
   { polling: 500, timeout: 30000 }
 );
@@ -39,7 +39,7 @@ try {
   padShown = false; // 没出现 PIN 键盘 = 已解锁或无需设置，直接继续
 }
 if (padShown) {
-  const rounds = (await page.getByText('设置后台 PIN').count()) ? 2 : 1;
+  const rounds = (await page.getByText('设置后台密码').count()) ? 2 : 1;
   for (let r = 0; r < rounds; r += 1) {
     for (const d of ['1', '2', '3', '4']) {
       await page.locator('button', { hasText: new RegExp(`^${d}$`) }).first().click();

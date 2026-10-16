@@ -18,7 +18,7 @@ async function gotoStaff(path) {
   await page.goto(BASE + path, { waitUntil: 'networkidle' });
   await page.waitForTimeout(700);
   const needs =
-    (await page.getByText('设置后台 PIN').count()) || (await page.getByText('请输入后台 PIN').count());
+    (await page.getByText('设置后台密码').count()) || (await page.getByText('请输入后台密码').count());
   if (needs) {
     for (const d of ['1', '2', '3', '4']) {
       await page.locator('button', { hasText: new RegExp(`^${d}$`) }).first().click();

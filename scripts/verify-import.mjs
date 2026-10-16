@@ -100,7 +100,7 @@ try {
   await gotoStaff(pageA, 'staff/backup');
 
   // 先点开恢复面板，才能看到导入用的 file input
-  await pageA.getByRole('button', { name: /选择 SQLite 文件恢复/ }).click();
+  await pageA.getByRole('button', { name: /选择备份文件恢复/ }).click();
   await pageA.waitForTimeout(600);
   const inputs = await pageA.evaluate(() =>
     Array.from(document.querySelectorAll('input[type="file"]')).map((i) => ({

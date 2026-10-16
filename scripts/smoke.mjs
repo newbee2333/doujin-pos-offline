@@ -67,7 +67,7 @@ console.log(pinPad.slice(0, 200));
 
 // 若出现 PIN 设置，设置一个
 const pinButtons = page.locator('button', { hasText: /^[0-9]$/ });
-if (await page.getByText('设置后台 PIN').count()) {
+if (await page.getByText('设置后台密码').count()) {
   for (const d of ['1', '2', '3', '4']) {
     await page.locator('button', { hasText: new RegExp(`^${d}$`) }).first().click();
   }

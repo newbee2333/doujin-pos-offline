@@ -22,8 +22,8 @@ page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
 async function gotoStaff(path) {
   await page.goto(BASE + path, { waitUntil: 'networkidle' });
   await page.waitForTimeout(700);
-  // 首次进入后台是「设置后台 PIN」，之后是「请输入后台 PIN」，两种都要处理
-  const needsPin = (await page.getByText('设置后台 PIN').count()) || (await page.getByText('请输入后台 PIN').count());
+  // 首次进入后台是「设置后台密码」，之后是「请输入后台密码」，两种都要处理
+  const needsPin = (await page.getByText('设置后台密码').count()) || (await page.getByText('请输入后台密码').count());
   if (needsPin) {
     for (const d of ['1', '2', '3', '4']) {
       await page.locator('button', { hasText: new RegExp(`^${d}$`) }).first().click();

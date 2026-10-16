@@ -104,7 +104,7 @@ export default function SaveDatabase({
 
       <p className="tiny muted" style={{ marginTop: 'var(--sp-2)', marginBottom: 0 }}>
         {bytes
-          ? `已生成 ${file}（${formatBytes(bytes.length)}）。浏览器发起下载不等于文件一定落盘成功，请在平板的「文件」里确认后再点「我确认已保存」。`
+          ? `已生成 ${file}（${formatBytes(bytes.length)}）。浏览器发起下载不等于文件一定保存成功，请在平板的「文件」里确认后再点「我确认已保存」。`
           : state.data?.lastConfirmedSavedAt
             ? `最近确认保存：${new Date(state.data.lastConfirmedSavedAt).toLocaleString('zh-CN')}。`
             : '这台设备还没有确认保存过备份。'}
