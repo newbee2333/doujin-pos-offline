@@ -14,7 +14,6 @@ import {
   listEventConfigs,
   listEvents,
   listPaymentMethods,
-  reopenEvent,
   removeVariantsFromEvent,
   setEventPaymentMethods,
   setVariantsEnabled,
@@ -32,6 +31,7 @@ import { errorMessage, useApp } from '../../store';
 import AssetEditor from '../AssetEditor';
 import { validateEventDates } from '../../domain/event-dates';
 import { AdjustStockModal } from '../AdjustStockModal';
+import ReopenEventDialog from '../ReopenEventDialog';
 import { AssetImage, ErrorBox, Field, InfoDot, Spinner, useAsync } from '../components';
 import AddProductsModal from './AddProductsModal';
 import { ProductEditorModal } from '../ProductEditor';
@@ -205,6 +205,7 @@ function EventDetail({
   const sales = useAsync(() => getVariantSales(eventId), [eventId, configs.data]);
   const [ready, setReady] = useState<string[] | null>(null);
   const [stockTarget, setStockTarget] = useState<{ variantId: string; name: string } | null>(null);
+  const [reopening, setReopening] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -412,6 +413,11 @@ function EventDetail({
 
   return (
     <>
+      {reopening ? <ReopenEventDialog eventId={eventId} name={ev.name} onClose={() => setReopening(false)} onDone={() => {
+        setReopening(false);
+        showToast('已重新打开');
+        event.reload(); configs.reload(); onChanged(); setReady(null);
+      }} /> : null}
       <div className="card" style={{ marginTop: 12 }}>
         <div className="row">
           <h2 style={{ margin: 0 }}>{ev.name}</h2>
@@ -441,10 +447,7 @@ function EventDetail({
           {ev.status === 'closed' ? (
             <button
               disabled={busy}
-              onClick={() => {
-                const reason = window.prompt('重新打开已收摊展会的原因（会记入审计）：');
-                if (reason) run(async () => reopenEvent(eventId, reason), '已重新打开');
-              }}
+              onClick={() => setReopening(true)}
             >
               重新打开
             </button>
