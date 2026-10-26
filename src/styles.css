@@ -2077,7 +2077,7 @@ html.standalone-safe-frame {
     min-height: 0;
     overflow: hidden;
   }
-  .kiosk-menu-body > .menu-grid {
+  .kiosk-menu .kiosk-menu-body > .menu-grid {
     grid-template-columns: repeat(4, minmax(0, 1fr));
     overflow-y: auto;
     min-height: 0;

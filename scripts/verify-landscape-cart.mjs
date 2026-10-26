@@ -61,6 +61,8 @@ try {
     assert.equal(await page.evaluate(async () => (await import('/src/store.ts')).useApp.getState().cart.length), 0);
     await page.locator('select').first().selectOption('1');
     assert.equal(await preview.locator('.kiosk-side-cart').isVisible(), false);
+    await page.locator('select').first().selectOption('2');
+    assert.equal(await preview.locator('.menu-grid').evaluate(el => getComputedStyle(el).gridTemplateColumns.split(' ').length), 2, 'phone preview keeps two columns');
 
     await page.getByRole('button', { name: '进入游客菜单', exact: true }).click();
     await page.locator('.kiosk-menu .menu-card').first().waitFor();
