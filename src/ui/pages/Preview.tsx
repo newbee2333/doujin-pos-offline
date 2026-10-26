@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { getKioskMenu } from '../../services/orders';
 import { listCategories } from '../../services/catalog';
+import { getLandscapeCartEnabled } from '../../services/system';
 import { formatMoney } from '../../domain/money';
 import { useApp, type CartItem } from '../../store';
 import type { MenuItem } from '../../domain/types';
@@ -33,6 +34,7 @@ export default function PreviewPage() {
 
   const menu = useAsync(() => (eventId ? getKioskMenu(eventId) : Promise.resolve([])), [eventId]);
   const cats = useAsync(() => listCategories(false), []);
+  const layout = useAsync(getLandscapeCartEnabled, []);
   const frame = FRAMES[frameIdx];
   const cartCount = previewCart.reduce((sum, item) => sum + item.quantity, 0);
   const currency = menu.data?.[0]?.currency ?? 'CNY';
@@ -59,13 +61,15 @@ export default function PreviewPage() {
   }, [menu.data, category, keyword]);
 
   if (!eventId) return <ErrorBox message="请先选择展会" />;
-  if (menu.loading) {
+  if (menu.loading || layout.loading) {
     return (
       <div className="center-page">
         <Spinner label="读取菜单…" />
       </div>
     );
   }
+
+  if (layout.error) return <ErrorBox message={layout.error} />;
 
   return (
     <div className="page">
@@ -88,7 +92,7 @@ export default function PreviewPage() {
       </p>
 
       <div
-        className={`preview-frame${frame.width > frame.height ? ' landscape-cart-preview' : ''}`}
+        className={`preview-frame${frame.width > frame.height && layout.data ? ' landscape-cart-preview' : ''}`}
         style={{ maxWidth: '100%', width: frame.width, height: frame.height, overflow: 'auto', marginTop: 10 }}
       >
         <div className="preview-badge">预览模式 · 不会产生任何真实业务数据</div>

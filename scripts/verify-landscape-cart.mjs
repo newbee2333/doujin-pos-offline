@@ -136,6 +136,53 @@ try {
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
     }
     await page.setViewportSize({ width: 1180, height: 820 });
+    // Toggle the persisted layout through the staff UI, without replacing the cart.
+    async function staffSettings() {
+      await page.getByRole('button', { name: '摊主处理', exact: true }).click();
+      await page.locator('.pin-keys').waitFor();
+      for (const digit of '1234') await page.locator(`.pin-digit:text-is("${digit}")`).click();
+      await page.locator('.pin-actions button.primary').click();
+      await page.locator('.sidebar a').filter({ hasText: /^设置$/ }).click();
+    }
+    await staffSettings();
+    const toggle = page.getByRole('switch', { name: 'iPad 横屏右侧购物车', exact: true });
+    await toggle.waitFor();
+    assert.equal(await toggle.isChecked(), true, 'old databases default to enabled');
+    await ctx.setOffline(true);
+    await toggle.uncheck();
+    await page.getByText('横屏改用底部购物车入口', { exact: true }).waitFor();
+    await ctx.setOffline(false);
+    await page.getByRole('button', { name: '进入游客菜单', exact: true }).click();
+    await menu.locator('.menu-card').first().waitFor();
+    assert.equal(await cart.isVisible(), false);
+    assert.equal(await cart.locator('.side-cart-count').innerText(), count, 'changing layout retains selected items');
+    await staffSettings();
+    await page.reload();
+    await page.locator('.pin-keys').waitFor();
+    for (const digit of '1234') await page.locator(`.pin-digit:text-is("${digit}")`).click();
+    await page.locator('.pin-actions button.primary').click();
+    assert.equal(await toggle.isChecked(), false, 'layout choice survives reload');
+    await page.locator('.sidebar a[href="/preview"]').click();
+    assert.equal(await preview.locator('.kiosk-side-cart').isVisible(), false);
+    await page.getByRole('button', { name: '进入游客菜单', exact: true }).click();
+    await menu.locator('.menu-card').first().waitFor();
+    assert.equal(await cart.isVisible(), false);
+    const bottom = page.locator('.kiosk-menu > .cart-bar');
+    assert.equal(await bottom.isVisible(), true);
+    const bottomBounds = await bottom.boundingBox();
+    assert.ok(bottomBounds.y >= 0 && bottomBounds.y + bottomBounds.height <= 820);
+    await menu.locator('.add-btn').first().click();
+    await page.screenshot({ path: `test-results/landscape-cart-bottom-${standalone ? 'standalone' : 'browser'}.png` });
+    await bottom.getByRole('button', { name: '查看购物车', exact: true }).click();
+    await page.getByRole('button', { name: '去结算', exact: true }).waitFor();
+    await page.getByRole('button', { name: '‹ 继续选购', exact: true }).click();
+    await staffSettings();
+    await toggle.check();
+    await page.getByText('横屏改用右侧购物车', { exact: true }).waitFor();
+    await page.getByRole('button', { name: '进入游客菜单', exact: true }).click();
+    await cart.waitFor({ state: 'visible' });
+    // Reload intentionally clears the in-memory cart; add one item for checkout.
+    await menu.locator('.add-btn').first().click();
     await ctx.setOffline(true);
     await checkout.tap();
     await page.getByRole('heading', { name: '订单内容', exact: true }).waitFor();

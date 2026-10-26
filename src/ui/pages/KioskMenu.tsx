@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getKioskMenu } from '../../services/orders';
 import { listCategories } from '../../services/catalog';
+import { getLandscapeCartEnabled } from '../../services/system';
 import { formatMoney } from '../../domain/money';
 import { stockLabel, type MenuItem } from '../../domain/types';
 import { useApp } from '../../store';
@@ -27,6 +28,7 @@ export default function KioskMenuPage() {
 
   const menu = useAsync(() => (eventId ? getKioskMenu(eventId) : Promise.resolve([])), [eventId]);
   const cats = useAsync(() => listCategories(false), []);
+  const layout = useAsync(getLandscapeCartEnabled, []);
 
   // 未提交购物车 5 分钟无操作提示，30 秒内无响应才清空
   const [warnAt, setWarnAt] = useState<number | null>(null);
@@ -88,17 +90,17 @@ export default function KioskMenuPage() {
       </div>
     );
   }
-  if (menu.loading) {
+  if (menu.loading || layout.loading) {
     return (
       <div className="center-page">
         <Spinner label="读取菜单…" />
       </div>
     );
   }
-  if (menu.error) {
+  if (menu.error || layout.error) {
     return (
       <div className="center-page">
-        <ErrorBox message={menu.error} />
+        <ErrorBox message={menu.error ?? layout.error} />
       </div>
     );
   }
@@ -139,7 +141,7 @@ export default function KioskMenuPage() {
   }
 
   return (
-    <div className="kiosk kiosk-menu" onPointerDown={touch} onKeyDown={touch}>
+    <div className={`kiosk kiosk-menu${layout.data ? ' landscape-cart-enabled' : ''}`} onPointerDown={touch} onKeyDown={touch}>
       {/* 页头只占一行：标题块 / 分类胶囊 / 搜索框 / 摊主处理。
           分类原来自己占一整行、搜索框占满整行，两行加起来 145px；
           合起来之后 68px，省下的正好是一整行商品 ——

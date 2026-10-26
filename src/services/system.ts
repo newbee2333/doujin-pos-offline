@@ -28,6 +28,15 @@ export async function markConfirmedSaved(): Promise<void> {
   await setSetting('backup.last_confirmed_saved_at', new Date().toISOString());
 }
 
+/** Missing setting preserves the default landscape side cart for existing databases. */
+export async function getLandscapeCartEnabled(): Promise<boolean> {
+  return (await getSetting('ui.landscape_side_cart')) !== '0';
+}
+
+export async function setLandscapeCartEnabled(enabled: boolean): Promise<void> {
+  await setSetting('ui.landscape_side_cart', enabled ? '1' : '0');
+}
+
 const BACKUP_REMIND_HOURS = 24;
 
 export async function shouldRemindBackup(): Promise<boolean> {

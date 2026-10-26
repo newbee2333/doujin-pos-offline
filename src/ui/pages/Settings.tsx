@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { setSetting } from '../../services/context';
-import { isPinSet, setPin } from '../../services/system';
+import { getLandscapeCartEnabled, isPinSet, setLandscapeCartEnabled, setPin } from '../../services/system';
 import { checkCapabilities, requestPersistence } from '../../db/storage-guard';
 import { errorMessage, useApp } from '../../store';
 import { ErrorBox, Field, SetPinFlow, Spinner, useAsync } from '../components';
@@ -12,6 +12,10 @@ export default function SettingsPage() {
   const showToast = useApp((s) => s.showToast);
   const [mode, setMode] = useState<'none' | 'new'>('none');
   const [error, setError] = useState<string | null>(null);
+  const [layoutOverride, setLayoutOverride] = useState<boolean | null>(null);
+  const [layoutBusy, setLayoutBusy] = useState(false);
+  const [layoutError, setLayoutError] = useState<string | null>(null);
+  const layout = useAsync(getLandscapeCartEnabled, []);
 
   const pinSet = useAsync(() => isPinSet(), []);
   const persisted = useAsync(() => requestPersistence(), []);
@@ -20,6 +24,26 @@ export default function SettingsPage() {
   return (
     <div className="page narrow">
       <h1>设置</h1>
+
+      <div className="card">
+        <h2>游客菜单</h2>
+        {layout.loading ? <Spinner label="读取布局设置…" /> : <label className="check">
+          <input type="checkbox" role="switch" checked={layoutOverride ?? layout.data ?? true}
+            disabled={layoutBusy || !!layout.error} onChange={async e => {
+              const enabled = e.target.checked;
+              const previous = layoutOverride ?? layout.data ?? true;
+              setLayoutOverride(enabled); setLayoutBusy(true); setLayoutError(null);
+              try {
+                await setLandscapeCartEnabled(enabled);
+                showToast(enabled ? '横屏改用右侧购物车' : '横屏改用底部购物车入口');
+              } catch (err) { setLayoutOverride(previous); setLayoutError(errorMessage(err)); }
+              finally { setLayoutBusy(false); }
+            }} />
+          <span>iPad 横屏右侧购物车</span>
+        </label>}
+        <p className="small muted">默认开启。关闭后，横屏也使用底部的「查看购物车」入口，点击后进入购物车页。竖屏和手机布局不变。</p>
+        <ErrorBox message={layoutError ?? layout.error} />
+      </div>
 
       <div className="card">
         <h2>安全与访问</h2>

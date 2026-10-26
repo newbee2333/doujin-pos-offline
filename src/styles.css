@@ -2066,18 +2066,18 @@ html.standalone-safe-frame {
 /* Wide landscape menus reserve one quarter for a cart with its own scroll area.
    Portrait and phone layouts retain the original bottom cart bar. */
 @media (min-width: 980px) and (orientation: landscape) {
-  .kiosk-menu-route > .kiosk-menu { height: 100dvh; min-height: 0; overflow: hidden; }
-  .standalone-safe-frame .kiosk-menu-route > .kiosk-menu { height: 100%; }
-  .kiosk-menu > .kiosk-hero { flex: none; position: relative; }
-  .kiosk-menu > .notice { flex: none; }
-  .kiosk-menu .kiosk-menu-body {
+  .kiosk-menu-route > .kiosk-menu.landscape-cart-enabled { height: 100dvh; min-height: 0; overflow: hidden; }
+  .standalone-safe-frame .kiosk-menu-route > .kiosk-menu.landscape-cart-enabled { height: 100%; }
+  .kiosk-menu.landscape-cart-enabled > .kiosk-hero { flex: none; position: relative; }
+  .kiosk-menu.landscape-cart-enabled > .notice { flex: none; }
+  .kiosk-menu.landscape-cart-enabled .kiosk-menu-body {
     display: grid;
     grid-template-columns: minmax(0, 3fr) minmax(245px, 1fr);
     flex: 1;
     min-height: 0;
     overflow: hidden;
   }
-  .kiosk-menu .kiosk-menu-body > .menu-grid {
+  .kiosk-menu.landscape-cart-enabled .kiosk-menu-body > .menu-grid {
     grid-template-columns: repeat(4, minmax(0, 1fr));
     overflow-y: auto;
     min-height: 0;
@@ -2085,8 +2085,8 @@ html.standalone-safe-frame {
     padding-bottom: var(--sp-4);
     overscroll-behavior-y: contain;
   }
-  .kiosk-menu > .cart-bar { display: none; }
-  .kiosk-menu .kiosk-side-cart { display: flex; }
+  .kiosk-menu.landscape-cart-enabled > .cart-bar { display: none; }
+  .kiosk-menu.landscape-cart-enabled .kiosk-side-cart { display: flex; }
 }
 
 /* Preview follows its selected frame, independent of the browser orientation. */
