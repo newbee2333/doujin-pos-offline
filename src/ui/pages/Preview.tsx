@@ -2,10 +2,12 @@ import { useMemo, useState } from 'react';
 import { getKioskMenu } from '../../services/orders';
 import { listCategories } from '../../services/catalog';
 import { formatMoney } from '../../domain/money';
-import { useApp } from '../../store';
+import { useApp, type CartItem } from '../../store';
+import type { MenuItem } from '../../domain/types';
 import { ErrorBox, Spinner, useAsync } from '../components';
 import MenuCard from '../MenuCard';
 import MenuOrder from '../MenuOrder';
+import KioskSideCart from '../KioskSideCart';
 
 const FRAMES = [
   { key: 'ipad-landscape', label: '平板横屏 1180×820', width: 1180, height: 820 },
@@ -26,12 +28,22 @@ export default function PreviewPage() {
   // 只画出一排不可点的胶囊，摊主会以为是自己点错了。
   // 选中态与过滤口径都跟游客菜单（KioskMenu）保持一致，别在这里再写一套。
   const [category, setCategory] = useState('');
-  const [cartCount, setCartCount] = useState(0);
+  const [previewCart, setPreviewCart] = useState<CartItem[]>([]);
   const [sorting, setSorting] = useState(false);
 
   const menu = useAsync(() => (eventId ? getKioskMenu(eventId) : Promise.resolve([])), [eventId]);
   const cats = useAsync(() => listCategories(false), []);
   const frame = FRAMES[frameIdx];
+  const cartCount = previewCart.reduce((sum, item) => sum + item.quantity, 0);
+  const currency = menu.data?.[0]?.currency ?? 'CNY';
+  function setPreviewQty(item: MenuItem, quantity: number) {
+    setPreviewCart(rows => {
+      const rest = rows.filter(row => row.variantId !== item.variant_id);
+      if (quantity <= 0) return rest;
+      return [...rest, { variantId: item.variant_id, productName: item.product_name, variantName: item.variant_name,
+        priceMinor: item.price_minor, quantity, maxAvailable: item.available_stock, coverAssetId: item.cover_asset_id }];
+    });
+  }
 
   const filtered = useMemo(() => {
     const kw = keyword.trim().toLowerCase();
@@ -76,7 +88,7 @@ export default function PreviewPage() {
       </p>
 
       <div
-        className="preview-frame"
+        className={`preview-frame${frame.width > frame.height ? ' landscape-cart-preview' : ''}`}
         style={{ maxWidth: '100%', width: frame.width, height: frame.height, overflow: 'auto', marginTop: 10 }}
       >
         <div className="preview-badge">预览模式 · 不会产生任何真实业务数据</div>
@@ -116,17 +128,24 @@ export default function PreviewPage() {
             </button>
           ))}
         </div>
+        <div className="kiosk-menu-body">
         <div className="menu-grid">
             {filtered.map((item) => (
               <MenuCard
                 key={item.variant_id}
                 item={item}
-                onAdd={() => setCartCount((c) => c + 1)}
-                onSetQty={(v) => setCartCount(v)}
+                inCartQty={previewCart.find(row => row.variantId === item.variant_id)?.quantity ?? 0}
+                onAdd={() => setPreviewQty(item, (previewCart.find(row => row.variantId === item.variant_id)?.quantity ?? 0) + 1)}
+                onSetQty={(v) => setPreviewQty(item, v)}
                 onOpenDetail={() => {}}
               />
             ))}
             {!filtered.length ? <p className="muted">没有找到商品。</p> : null}
+        </div>
+        <KioskSideCart cart={previewCart} currency={currency} preview onSetQty={(id, qty) => {
+          const item = menu.data?.find(item => item.variant_id === id);
+          if (item) setPreviewQty(item, qty);
+        }} onClear={() => setPreviewCart([])} onCheckout={() => {}} />
         </div>
         <div className="cart-bar" style={{ position: 'sticky', bottom: 0 }}>
           <span className="count">{cartCount}</span>

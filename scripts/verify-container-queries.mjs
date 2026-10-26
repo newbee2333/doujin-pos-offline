@@ -92,10 +92,10 @@ try {
   ok('准备 8 个商品（不依赖开场，菜单草稿也能渲染）');
 
   // ── A1. 真机游客菜单：列数应随视口（=容器）宽变化
-  // 2026-09-17：列数改成「横屏 6 / 竖屏 4」，阈值 760 与 980。
+  // 横屏为四列商品 + 右侧购物车，竖屏仍为四列商品。
   const widths = [
-    { w: 1180, expect: 6, label: 'iPad 横屏' },
-    { w: 1024, expect: 6, label: 'iPad 小横屏' },
+    { w: 1180, expect: 4, label: 'iPad 横屏' },
+    { w: 1024, expect: 4, label: 'iPad 小横屏' },
     { w: 820, expect: 4, label: 'iPad 竖屏' },
     { w: 390, expect: 2, label: '手机' }
   ];
@@ -109,7 +109,7 @@ try {
   }
 
   // ── B. 购物车条滚动时仍吸附视口底部（container-type 的副作用实测）
-  await page.setViewportSize({ width: 1180, height: 520 });
+  await page.setViewportSize({ width: 820, height: 520 });
   await page.goto(BASE + 'kiosk', { waitUntil: 'networkidle' });
   await page.waitForTimeout(1000);
   const barBefore = await page.evaluate(() => {
@@ -156,7 +156,7 @@ try {
   await gotoStaff('preview');
   await page.waitForTimeout(1200);
   const frameExpect = [
-    { idx: 0, w: 1180, expect: 6, label: '平板横屏画框' },
+    { idx: 0, w: 1180, expect: 4, label: '平板横屏画框' },
     { idx: 1, w: 820, expect: 4, label: '平板竖屏画框' },
     { idx: 2, w: 390, expect: 2, label: '手机画框' }
   ];
