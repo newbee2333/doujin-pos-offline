@@ -65,8 +65,8 @@ export default function KioskCheckoutPage() {
   return (
     <div className="kiosk">
       <div className="kiosk-header">
-        <button className="small ghost" onClick={() => navigate('/kiosk/cart')} disabled={busy}>
-          ‹ 返回购物车
+        <button className="small ghost" onClick={() => navigate('/kiosk')} disabled={busy}>
+          ‹ 返回游客菜单
         </button>
         <span className="title">结算</span>
       </div>

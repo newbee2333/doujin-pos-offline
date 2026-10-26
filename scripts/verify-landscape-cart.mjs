@@ -187,6 +187,11 @@ try {
     await ctx.setOffline(true);
     await checkout.tap();
     await page.getByRole('heading', { name: '订单内容', exact: true }).waitFor();
+    await page.getByRole('button', { name: '‹ 返回游客菜单', exact: true }).tap();
+    await menu.locator('.menu-card').first().waitFor();
+    assert.ok((await cart.locator('.side-cart-item').count()) > 0, 'returning from checkout keeps selected items');
+    await checkout.tap();
+    await page.getByRole('heading', { name: '订单内容', exact: true }).waitFor();
     await page.getByRole('button', { name: '现金', exact: true }).click();
     await page.getByRole('button', { name: /^提交订单/ }).click();
     await page.locator('.order-no').waitFor();
