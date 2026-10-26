@@ -187,9 +187,13 @@ try {
     await addBtn.click();
     await page.waitForTimeout(400);
     // 不能用 page.goto 跳购物车——整页重载会清空内存里的购物车
-    await page.locator('.cart-bar button').first().click();
-    await page.waitForTimeout(900);
-    await page.getByRole('button', { name: '去结算' }).click();
+    if (await page.locator('.kiosk-side-cart').isVisible()) {
+      await page.locator('.kiosk-side-cart').getByRole('button', { name: '去结算', exact: true }).click();
+    } else {
+      await page.locator('.cart-bar button').first().click();
+      await page.waitForTimeout(900);
+      await page.getByRole('button', { name: '去结算' }).click();
+    }
     await page.waitForTimeout(900);
     const methodBtn = page.locator('.grid.cols-2 button').first();
     if (await methodBtn.count()) {

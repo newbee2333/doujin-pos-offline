@@ -2,11 +2,13 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getKioskMenu } from '../../services/orders';
 import { listCategories } from '../../services/catalog';
+import { getLandscapeCartEnabled } from '../../services/system';
 import { formatMoney } from '../../domain/money';
 import { stockLabel, type MenuItem } from '../../domain/types';
 import { useApp } from '../../store';
 import { AssetImage, ErrorBox, Modal, Money, QtyStepper, Spinner, useAsync } from '../components';
 import MenuCard from '../MenuCard';
+import KioskSideCart from '../KioskSideCart';
 
 const IDLE_MS = 5 * 60 * 1000;
 const WARN_MS = 30 * 1000;
@@ -22,9 +24,11 @@ export default function KioskMenuPage() {
   const [keyword, setKeyword] = useState('');
   const [detail, setDetail] = useState<MenuItem | null>(null);
   const [qty, setQty] = useState(1);
+  const [clearing, setClearing] = useState(false);
 
   const menu = useAsync(() => (eventId ? getKioskMenu(eventId) : Promise.resolve([])), [eventId]);
   const cats = useAsync(() => listCategories(false), []);
+  const layout = useAsync(getLandscapeCartEnabled, []);
 
   // 未提交购物车 5 分钟无操作提示，30 秒内无响应才清空
   const [warnAt, setWarnAt] = useState<number | null>(null);
@@ -86,17 +90,17 @@ export default function KioskMenuPage() {
       </div>
     );
   }
-  if (menu.loading) {
+  if (menu.loading || layout.loading) {
     return (
       <div className="center-page">
         <Spinner label="读取菜单…" />
       </div>
     );
   }
-  if (menu.error) {
+  if (menu.error || layout.error) {
     return (
       <div className="center-page">
-        <ErrorBox message={menu.error} />
+        <ErrorBox message={menu.error ?? layout.error} />
       </div>
     );
   }
@@ -120,23 +124,24 @@ export default function KioskMenuPage() {
     setDetail(null);
   }
 
-  function updateCartQty(item: MenuItem, quantity: number) {
+  function updateCartQty(variantId: string, quantity: number) {
     touch();
     if (quantity <= 0) {
-      setCart(cart.filter((c) => c.variantId !== item.variant_id));
+      setCart(cart.filter((c) => c.variantId !== variantId));
       return;
     }
+    const item = menu.data?.find(item => item.variant_id === variantId);
     setCart(
       cart.map((c) =>
-        c.variantId === item.variant_id
-          ? { ...c, quantity, maxAvailable: item.available_stock }
+        c.variantId === variantId
+          ? { ...c, quantity, maxAvailable: item ? item.available_stock : c.maxAvailable }
           : c
       )
     );
   }
 
   return (
-    <div className="kiosk" onPointerDown={touch} onKeyDown={touch}>
+    <div className={`kiosk kiosk-menu${layout.data ? ' landscape-cart-enabled' : ''}`} onPointerDown={touch} onKeyDown={touch}>
       {/* 页头只占一行：标题块 / 分类胶囊 / 搜索框 / 摊主处理。
           分类原来自己占一整行、搜索框占满整行，两行加起来 145px；
           合起来之后 68px，省下的正好是一整行商品 ——
@@ -202,6 +207,7 @@ export default function KioskMenuPage() {
         </div>
       ) : null}
 
+      <div className="kiosk-menu-body">
       <div className="menu-grid">
         {filtered.map((item) => {
           const label = stockLabel(item);
@@ -227,7 +233,7 @@ export default function KioskMenuPage() {
               item={item}
               inCartQty={cartQty}
               onAdd={() => addToCart(item, 1)}
-              onSetQty={(v) => updateCartQty(item, v)}
+              onSetQty={(v) => updateCartQty(item.variant_id, v)}
               onOpenDetail={() => {
                 if (soldOut) return;
                 setQty(Math.max(1, cartQty || 1));
@@ -239,6 +245,13 @@ export default function KioskMenuPage() {
         })}
         {!filtered.length ? <p className="muted">没有找到商品。</p> : null}
       </div>
+      <KioskSideCart cart={cart} currency={currency} onSetQty={updateCartQty} onClear={() => setClearing(true)} onCheckout={() => navigate('/kiosk/checkout')} />
+      </div>
+
+      {clearing ? <Modal title="清空购物车" onClose={() => setClearing(false)} actions={<>
+        <button onClick={() => setClearing(false)}>取消</button>
+        <button className="danger" onClick={() => { clearCart(); setClearing(false); touch(); }}>确认清空</button>
+      </>}><p>要移除购物车里的全部商品吗？</p></Modal> : null}
 
       {detail ? (
         <Modal
