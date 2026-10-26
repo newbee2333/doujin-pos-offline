@@ -42,11 +42,10 @@ export default function KioskSideCart({ cart, currency, onSetQty, onClear, onChe
                 {item.variantName !== '默认规格' ? <div className="tiny muted">{item.variantName}</div> : null}
                 <div className="tiny muted">{formatMoney(item.priceMinor, currency)} / 件</div>
               </div>
-              <button className="small ghost side-cart-remove" aria-label={`移除 ${item.productName}`} onClick={() => onSetQty(item.variantId, 0)}>×</button>
             </div>
             <div className="side-cart-item-actions">
-              <QtyStepper value={item.quantity} min={0} max={item.maxAvailable} onChange={qty => onSetQty(item.variantId, qty)} />
               <span className="strong side-cart-line-total">{formatMoney(item.priceMinor * item.quantity, currency)}</span>
+              <QtyStepper value={item.quantity} min={0} max={item.maxAvailable} onChange={qty => onSetQty(item.variantId, qty)} />
             </div>
           </article>
         ))}
