@@ -11,7 +11,7 @@
  * 规格部分：一件商品只有一个「默认规格」，名称由系统生成、不可改，
  * 也不再提供「新增规格」——那个入口在现场没有对应动作，只会让人以为要点。
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   createAsset,
   createProduct,
@@ -25,7 +25,8 @@ import { hashBytes, prepareProductImage, type PreparedAsset } from '../domain/im
 import { minorToInput } from '../domain/money';
 import { errorMessage, useApp } from '../store';
 import AssetEditor from './AssetEditor';
-import VariantPicker, { type VariantOption } from './VariantPicker';
+import BundleComponentPicker, { BundleComponentRow } from './BundleComponentPicker';
+import type { VariantOption } from './variant-filter';
 import { ErrorBox, Field, Modal, useAsync } from './components';
 import type { Category, Currency, ProductType } from '../domain/types';
 import type { ProductWithVariants } from '../services/catalog';
@@ -114,9 +115,11 @@ export function ProductEditorModal({
 
   const [coverId, setCoverId] = useState<string | null>(product?.cover_asset_id ?? null);
   const [bundleComps, setBundleComps] = useState<{ component_variant_id: string; quantity: number }[]>([]);
-  // 用户动过成分表没有。编辑模式下没动过就不回写 ——
-  // 成分是异步读的，刚打开就点保存时列表还可能空着，此时写空会被服务端拒掉（至少要一个成分）。
+  // 只回写用户改过的成分。异步读取期间禁止保存与选择，避免空表覆盖。
   const [compsTouched, setCompsTouched] = useState(false);
+  const [selectingComponents, setSelectingComponents] = useState(false);
+  const componentButton = useRef<HTMLButtonElement>(null);
+  const editorScrollTop = useRef(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -134,10 +137,13 @@ export function ProductEditorModal({
   const bundleOptions = useMemo<VariantOption[]>(
     () =>
       (bundleSource.data ?? []).flatMap((p) =>
-        p.type === 'normal'
+        p.type === 'normal' && p.id !== product?.id
           ? p.variants.map((v) => ({
               id: v.id,
               sku: v.sku ?? null,
+              categoryId: p.category_id,
+              archived: !!p.archived || !!v.archived,
+              searchText: `${p.short_name ?? ''} ${p.fandom ?? ''} ${p.tags ?? ''}`,
               item: {
                 product_name: p.name,
                 variant_name: v.name,
@@ -156,23 +162,30 @@ export function ProductEditorModal({
             }))
           : []
       ),
-    [bundleSource.data]
+    [bundleSource.data, product?.id]
   );
 
   // 打开编辑套装时读一次现有成分
   const firstVariantId = product?.variants[0]?.id ?? null;
+  const storedComponents = useAsync(
+    () => isBundle && editing && firstVariantId ? getBundleComponents(firstVariantId) : Promise.resolve([]),
+    [isBundle, editing, firstVariantId]
+  );
   useEffect(() => {
-    if (!isBundle || !editing || !firstVariantId) return;
-    let cancelled = false;
-    void getBundleComponents(firstVariantId).then((rows) => {
-      if (!cancelled) {
-        setBundleComps(rows.map((r) => ({ component_variant_id: r.component_variant_id, quantity: r.quantity })));
-      }
+    if (!isBundle || compsTouched || storedComponents.loading || !storedComponents.data) return;
+    setBundleComps(storedComponents.data.map(row => ({ component_variant_id: row.component_variant_id, quantity: row.quantity })));
+  }, [isBundle, compsTouched, storedComponents.data, storedComponents.loading]);
+  const componentsLoading = bundleSource.loading || storedComponents.loading;
+  const componentsError = bundleSource.error ?? storedComponents.error;
+
+  function closeComponentPicker() {
+    setSelectingComponents(false);
+    requestAnimationFrame(() => {
+      const scroll = componentButton.current?.closest('.modal-content');
+      if (scroll) scroll.scrollTop = editorScrollTop.current;
+      componentButton.current?.focus({ preventScroll: true });
     });
-    return () => {
-      cancelled = true;
-    };
-  }, [isBundle, editing, firstVariantId]);
+  }
 
   /** 改成分表都要走这里：顺手把「动过了」标上，保存时才知道该不该回写。 */
   function editComps(next: { component_variant_id: string; quantity: number }[]) {
@@ -221,6 +234,8 @@ export function ProductEditorModal({
         if (bundleComps.some((c) => !c.component_variant_id)) throw new Error('请为每个成分选择一个商品规格');
         const ids = bundleComps.map((c) => c.component_variant_id);
         if (new Set(ids).size !== ids.length) throw new Error('同一成分请合并为一条');
+        if (bundleComps.some(c => !Number.isSafeInteger(c.quantity) || c.quantity <= 0)) throw new Error('每项成分的用量必须为正整数');
+        if (ids.some(id => !bundleOptions.some(option => option.id === id))) throw new Error('存在不可用的成分，请重新选择商品');
       }
 
       const priceMinor = parsePrice();
@@ -271,6 +286,9 @@ export function ProductEditorModal({
     }
   }
 
+  if (selectingComponents) return <BundleComponentPicker options={bundleOptions} components={bundleComps}
+    onCancel={closeComponentPicker} onApply={rows => { editComps(rows); closeComponentPicker(); }} />;
+
   return (
     <Modal
       title={editing ? `编辑：${product!.name}` : '新增商品'}
@@ -280,7 +298,7 @@ export function ProductEditorModal({
           <button onClick={onClose} disabled={busy}>
             取消
           </button>
-          <button className="primary" disabled={busy || !form.name.trim()} onClick={save}>
+          <button className="primary" disabled={busy || !form.name.trim() || (isBundle && (componentsLoading || !!componentsError))} onClick={save}>
             {busy ? <span className="spinner" /> : null}
             {editing ? '保存' : '创建'}
           </button>
@@ -404,55 +422,29 @@ export function ProductEditorModal({
               套装只消耗成分的库存，自身不持有库存。成分只能是普通库存商品。
               {editing ? '保存后生效。' : '创建时一起写入，不用先保存再回来配。'}
             </p>
-            {!bundleSource.loading && !bundleOptions.length ? (
+            {componentsLoading ? <p className="small muted" role="status">正在读取套装商品…</p> : null}
+            {componentsError ? <div className="col"><ErrorBox message={componentsError} /><button onClick={() => { bundleSource.reload(); storedComponents.reload(); }}>重新读取</button></div> : null}
+            {!componentsLoading && !componentsError && !bundleOptions.length ? (
               <div className="notice info">
                 还没有「普通库存」商品的规格可以选。先把要打包进去的商品建成「普通库存」类型，
                 再回来配套装成分。
               </div>
             ) : null}
-            {bundleComps.map((c, i) => (
-              <div key={i} className="bundle-comp">
-                <VariantPicker
-                  options={bundleOptions}
-                  value={c.component_variant_id}
-                  onChange={(id) =>
-                    editComps(
-                      bundleComps.map((x, j) => (j === i ? { ...x, component_variant_id: id } : x))
-                    )
-                  }
-                />
-                <div className="row tight">
-                  <span className="tiny muted">数量</span>
-                  <input
-                    type="number"
-                    min={1}
-                    aria-label="成分数量"
-                    value={c.quantity}
-                    onChange={(e) =>
-                      editComps(
-                        bundleComps.map((x, j) =>
-                          j === i ? { ...x, quantity: Math.max(1, Number(e.target.value)) } : x
-                        )
-                      )
-                    }
-                    style={{ maxWidth: 90 }}
-                  />
-                  <span className="spacer" />
-                  {/* 「移除」是去掉这一条成分，和上架 / 下架无关 */}
-                  <button className="small" onClick={() => editComps(bundleComps.filter((_, j) => j !== i))}>
-                    移除
-                  </button>
-                </div>
-              </div>
-            ))}
+            {!componentsLoading ? bundleComps.map((c, i) => <BundleComponentRow key={c.component_variant_id} component={c}
+              option={bundleOptions.find(option => option.id === c.component_variant_id)}
+              onQuantity={quantity => editComps(bundleComps.map((row, j) => j === i ? { ...row, quantity } : row))}
+              onRemove={() => editComps(bundleComps.filter((_, j) => j !== i))} />) : null}
+            {!componentsLoading && !componentsError && !bundleComps.length && bundleOptions.length ? <p className="small muted">还未选择商品，可一次勾选多项。</p> : null}
             <button
+              ref={componentButton}
               className="small"
-              disabled={!bundleOptions.length}
-              onClick={() =>
-                editComps([...bundleComps, { component_variant_id: bundleOptions[0]?.id ?? '', quantity: 1 }])
-              }
+              disabled={componentsLoading || !!componentsError || !bundleOptions.length}
+              onClick={() => {
+                editorScrollTop.current = componentButton.current?.closest('.modal-content')?.scrollTop ?? 0;
+                setSelectingComponents(true);
+              }}
             >
-              添加成分
+              {bundleComps.length ? '选择 / 添加商品' : '选择套装商品'}
             </button>
           </div>
         ) : null}

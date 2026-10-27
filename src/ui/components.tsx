@@ -122,16 +122,18 @@ export function Modal({
   title,
   children,
   onClose,
-  actions
+  actions,
+  className = ''
 }: {
   title: string;
   children: ReactNode;
   onClose?: () => void;
   actions?: ReactNode;
+  className?: string;
 }) {
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
+      <div className={`modal ${className}`} role="dialog" aria-modal="true" aria-label={title} tabIndex={-1} onClick={(e) => e.stopPropagation()}>
         <h2>{title}</h2>
         <div className="modal-content">{children}</div>
         {actions ? <div className="modal-actions">{actions}</div> : null}

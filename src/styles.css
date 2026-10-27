@@ -633,95 +633,6 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .modal-content { min-height: 0; overflow-y: auto; overscroll-behavior-y: contain; padding: 4px; margin: -4px; }
 .modal-actions { flex: none; display: flex; gap: 10px; justify-content: flex-end; margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--line); flex-wrap: wrap; }
 
-/* ------------------------------------------- 规格选择器（复用菜单卡 + 搜索）
-   收起时只有一行摘要（缩略图 + 品名 / 规格名），点开才铺开菜单卡网格。
-   不默认铺开是因为一个套装可能有好几条成分 —— 每行都挂一片卡片墙太重，
-   而摊主多数时候只是确认一下「这条成分是不是它」。
-   卡片本身复用 .menu-card / .menu-card-cover（见 MenuCard 的选择模式）。
-   网格没有直接用 .menu-grid：那个类带着给购物车条留的底衬和 620/760/980
-   三档容器查询列数，是按游客面整屏宽度调的，这里是弹窗里的内嵌区块。 */
-.variant-picker {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-2);
-  min-width: 0;
-}
-/* 一条套装成分占一块：上面是选择器，下面是数量与移除。
-   竖着放而不是挤在一行 —— 展开后的卡片网格需要整行宽度。 */
-.bundle-comp {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-2);
-  padding: var(--sp-2);
-  margin-bottom: var(--sp-2);
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-}
-.vp-toggle {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-  width: 100%;
-  min-height: var(--tap);
-  padding: var(--sp-1) var(--sp-2) var(--sp-1) var(--sp-1);
-  background: var(--surface);
-  border: 1px solid var(--line-strong);
-  border-radius: var(--r-sm);
-  text-align: left;
-  cursor: pointer;
-}
-.vp-toggle:hover { border-color: var(--accent); }
-.vp-toggle-text { display: flex; flex-direction: column; flex: 1; min-width: 0; }
-.vp-name {
-  font-size: var(--fs-small);
-  color: var(--ink);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.vp-sub {
-  font-size: var(--fs-caption);
-  color: var(--ink-3);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.vp-placeholder { font-size: var(--fs-small); color: var(--ink-3); }
-.vp-caret { flex-shrink: 0; font-size: var(--fs-caption); color: var(--ink-3); }
-/* 没有封面时不占位、也不写「无图片」——36px 见方放不下那三个字 */
-.vp-thumb {
-  flex-shrink: 0;
-  width: 36px;
-  height: 36px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-  background: var(--surface-2);
-  object-fit: cover;
-}
-.vp-panel {
-  padding: var(--sp-2);
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-  background: var(--surface-2);
-}
-.vp-search {
-  width: 100%;
-  margin-bottom: var(--sp-2);
-  padding: var(--sp-2) var(--sp-3);
-  font-size: var(--fs-small);
-}
-.vp-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
-  gap: var(--sp-3);
-  /* 弹窗自己也滚，两层都滚会互相抢 —— 这里给个上限，超出的在块内滚 */
-  max-height: 340px;
-  overflow: auto;
-  padding: 2px;
-}
-.vp-empty { font-size: var(--fs-small); color: var(--ink-3); margin: 0; padding: var(--sp-2); }
-
 /* 选择模式（套装成分）：选中的卡片描边 + 底色，并在动作行给出勾选按钮。
    描边用 box-shadow 而不是 border —— 换 border 会让卡片尺寸跳一下。 */
 .menu-card-cover.picked {
@@ -2227,3 +2138,56 @@ input:disabled, select:disabled, textarea:disabled { color: var(--ink-3); opacit
 .theme-choice strong, .theme-choice .tiny { display: block; }
 .theme-choice .tiny { margin-top: 4px; }
 @media (max-width: 560px) { .theme-options { grid-template-columns: 1fr; gap: 8px; } .theme-choice { min-height: 64px; } }
+
+/* Bundle selection is a single, spacious step: catalog left, draft right. */
+.bundle-picker-modal { max-width: 1040px; height: min(780px, calc(100dvh - 48px - var(--app-chrome-clearance, 0px))); max-height: calc(100dvh - 48px - var(--app-chrome-clearance, 0px)); }
+.bundle-picker-modal > .modal-content { display: flex; flex: 1; overflow: hidden; }
+.bundle-picker { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; gap: 12px; }
+.bundle-picker-hint { flex: none; margin: 0; }
+.bundle-picker-tools { flex: none; display: grid; grid-template-columns: minmax(0, 1fr) 160px; gap: 10px; align-items: center; }
+.bundle-picker-tools .check { grid-column: 1 / -1; min-height: 44px; }
+.bundle-picker-tools select { min-width: 0; }
+.bundle-picker-workspace { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; }
+.bundle-catalog, .bundle-selection { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+.bundle-selection { padding: 12px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--bg); }
+.bundle-section-title { flex: none; display: flex; justify-content: space-between; gap: 8px; margin-bottom: 10px; font-weight: 600; font-size: var(--fs-small); }
+.bundle-section-title .muted { font-weight: 400; }
+.bundle-candidates { min-height: 0; overflow-y: auto; overscroll-behavior-y: contain; padding: 2px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; align-content: start; }
+.bundle-candidate { display: grid; grid-template-columns: 56px minmax(0, 1fr) 20px; gap: 10px; align-items: center; min-height: 100px; padding: 10px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); cursor: pointer; }
+.bundle-candidate:hover { border-color: var(--line-strong); }
+.bundle-candidate.selected { border-color: var(--accent); background: var(--accent-soft); }
+.bundle-candidate:focus-within { outline: 2px solid var(--accent); outline-offset: -2px; }
+.bundle-candidate > input { width: 20px; height: 20px; margin: 0; }
+.bundle-candidate-info { display: flex; flex-direction: column; gap: 4px; min-width: 0; overflow-wrap: anywhere; }
+.bundle-candidate-info strong { font-size: var(--fs-small); line-height: 1.4; }
+.bundle-candidate-thumb { width: 56px; height: 72px; object-fit: contain; border-radius: var(--r-sm); background: var(--surface-2); }
+.bundle-candidate .thumb-placeholder, .bundle-member .thumb-placeholder { display: grid; place-items: center; font-size: 10px; color: var(--ink-3); }
+.bundle-selected-list { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior-y: contain; padding: 2px; }
+.bundle-member { display: grid; grid-template-columns: 44px minmax(0, 1fr); align-items: start; gap: 10px; padding: 12px; margin-bottom: 10px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); }
+.bundle-member:last-child { margin-bottom: 0; }
+.bundle-member-info { display: flex; flex-direction: column; gap: 4px; min-width: 0; overflow-wrap: anywhere; }
+.bundle-member-info strong { font-size: var(--fs-small); line-height: 1.4; }
+.bundle-member-thumb { width: 44px; height: 56px; object-fit: contain; border-radius: var(--r-sm); background: var(--surface-2); }
+.bundle-member-controls { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.bundle-member-controls > button, .bundle-comps > button { min-height: 44px; }
+.bundle-quantity { display: flex; align-items: center; margin-left: auto; }
+.bundle-quantity button { min-width: 44px; min-height: 44px; padding: 0; }
+.bundle-quantity input { width: 48px; min-width: 0; min-height: 44px; padding: 4px; text-align: center; border-radius: 0; margin-inline: -1px; appearance: textfield; }
+.bundle-quantity input::-webkit-inner-spin-button, .bundle-quantity input::-webkit-outer-spin-button { appearance: none; margin: 0; }
+.bundle-member input[aria-invalid='true'] { border-color: var(--danger); }
+.bundle-picker-empty { grid-column: 1 / -1; padding: 24px 12px; text-align: center; color: var(--ink-3); font-size: var(--fs-small); }
+.bundle-picker-empty strong { color: var(--ink-2); }
+.bundle-picker-summary { margin-right: auto; color: var(--ink-2); font-size: var(--fs-small); }
+.bundle-picker-tabs { display: none; }
+@media (max-width: 700px) {
+  .bundle-picker-modal { padding: 16px; max-height: calc(100dvh - 24px - var(--app-chrome-clearance, 0px)); height: calc(100dvh - 24px - var(--app-chrome-clearance, 0px)); }
+  .bundle-picker-workspace { grid-template-columns: minmax(0, 1fr); }
+  .bundle-candidates { grid-template-columns: minmax(0, 1fr); }
+  .bundle-picker-tools { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .bundle-picker-tabs { display: flex; flex: none; gap: 8px; }
+  .bundle-picker-tabs button { flex: 1; }
+  .bundle-picker-workspace[data-tab='catalog'] .bundle-selection,
+  .bundle-picker-workspace[data-tab='selected'] .bundle-catalog { display: none; }
+  .bundle-picker-summary { flex-basis: 100%; }
+  .bundle-picker-modal .modal-actions { margin-top: 12px; gap: 8px; }
+}
