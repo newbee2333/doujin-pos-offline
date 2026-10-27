@@ -3,7 +3,7 @@
  *
  * 起因：摊主反馈商品一多，靠鼠标在长列表里翻封面找不到东西，
  * 而列表里几个候选常常只差「上卷 / 下卷」这种一个字。
- * 这里只测过滤本身；「搜索结果能不能点中」由 scripts/verify-bundle-ux.mjs 实机验。
+ * 这里只测过滤本身；实际选择与保存由 scripts/verify-bundle-picker.mjs 在浏览器验证。
  */
 import { describe, expect, it } from 'vitest';
 import { filterVariantOptions, type VariantOption } from '../variant-filter';
@@ -60,5 +60,16 @@ describe('套装成分搜索', () => {
 
   it('搜不到就是空数组，不兜底成全量 —— 兜底会让「没找到」变成「全都在」', () => {
     expect(filterVariantOptions(OPTIONS, '不存在的东西')).toEqual([]);
+  });
+
+  it('多个关键词可以分别匹配商品名和 SKU', () => {
+    expect(names(filterVariantOptions(OPTIONS, '夜行车 02'))).toEqual(['《夜行车》下卷']);
+    expect(filterVariantOptions(OPTIONS, '夜行车 不存在')).toEqual([]);
+  });
+
+  it('能按分类和原作等补充信息查找', () => {
+    expect(filterVariantOptions(OPTIONS, '新刊')).toEqual(OPTIONS);
+    const withFandom = { ...OPTIONS[0], searchText: '月光幻想' };
+    expect(filterVariantOptions([withFandom, OPTIONS[1]], '月光幻想')).toEqual([withFandom]);
   });
 });

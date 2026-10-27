@@ -5,7 +5,7 @@
  *
  * 1. 菜单预览的分类胶囊能点（原来是一排死的 <span>，「全部」永远高亮）
  * 2. 商品编辑里「菜单分类」和「库存类型」不会混（默认分类里就有一个叫「套装」的）
- * 3. 「新增商品」时就能配套装成分，且成分选择器复用游客菜单的商品卡 + 搜索
+ * 3. 「新增商品」时就能配套装成分，且成分选择器支持批量勾选与搜索
  * 4. 摊主收银台上，成分有货的套装不再显示售罄
  * 5. 移除一个还在被本场套装消耗的成分时，确认框会多说一句
  *
@@ -16,7 +16,7 @@ import { chromium } from 'playwright';
 import { mkdirSync } from 'node:fs';
 
 const BASE = process.env.SMOKE_BASE ?? process.env.BASE ?? 'http://127.0.0.1:5199/';
-const OUT = 'scripts/ui10';
+const OUT = 'test-results/bundle-ux';
 mkdirSync(OUT, { recursive: true });
 
 const browser = await chromium.launch({ channel: 'msedge', args: ['--no-sandbox'] });
@@ -77,7 +77,7 @@ async function newProduct(name, categoryLabel) {
 }
 
 const gridCount = () => page.locator('.preview-frame .menu-card').count();
-const pickerCards = () => page.locator('.vp-grid .menu-card-cover');
+const pickerCards = () => page.locator('.bundle-candidates .bundle-candidate');
 
 // ─────────────────────────────────────────── 准备：库 / 展会 / 三个普通商品
 await page.goto(BASE, { waitUntil: 'networkidle' });
@@ -162,82 +162,44 @@ check('提示条随类型切换消失', !(await modalText()).includes('「库存
 check('类型说明换成了套装那句', (await modalText()).includes('自己没有库存'));
 
 const comps = page.locator('.modal .bundle-comps');
-check('没有成分时先只有「添加成分」', (await comps.locator('.bundle-comp').count()) === 0);
-await comps.getByRole('button', { name: '添加成分' }).click();
-await page.waitForTimeout(500);
-check('点「添加成分」出现一条成分', (await comps.locator('.bundle-comp').count()) === 1);
-
-// —— 选择器收起时只有一行摘要（新增的行会预选第一项，所以这里不该是占位文案）
-const block = comps.locator('.bundle-comp').first();
-check('收起状态是一行摘要，没有铺开网格', (await comps.locator('.vp-grid').count()) === 0);
-check('摘要行给出了已选商品名', (await block.locator('.vp-name').innerText()).trim().length > 0);
-check('摘要行给出了规格名', (await block.locator('.vp-sub').innerText()).includes('默认规格'));
-
-// —— 展开后是游客菜单那套卡片
-await block.locator('.vp-toggle').click();
-await page.waitForTimeout(500);
-check('展开后有卡片网格', (await comps.locator('.vp-grid').count()) === 1);
-const cardCount = await pickerCards().count();
-check('网格里是菜单卡（.menu-card-cover）', cardCount === 3, `实得 ${cardCount}`);
-check(
-  '卡片复用了菜单的封面位（无图时是 thumb-placeholder）',
-  (await comps.locator('.vp-grid .menu-card-cover .thumb-placeholder').count()) === 3
-);
-check('卡片上带「选择」按钮', (await comps.locator('.vp-grid .pick-btn').count()) === 3);
-await shot('ui10-3-picker-cards');
-
-// —— 搜索
-const search = comps.locator('.vp-search');
-check('展开后带搜索框', (await search.count()) === 1);
+check('空套装没有预选成分', (await comps.locator('.bundle-member').count()) === 0);
+await comps.getByRole('button', { name: '选择套装商品', exact: true }).click();
+const picker = page.locator('.bundle-picker-modal');
+await picker.waitFor();
+check('一次打开完整商品库', (await pickerCards().count()) === 3);
+check('首次没有默认选中第一个商品', (await picker.locator('.bundle-candidate input:checked').count()) === 0);
+const search = picker.getByRole('searchbox', { name: '搜索套装成分' });
 await search.fill('旧梦');
-await page.waitForTimeout(400);
-const dreamCount = await pickerCards().count();
-check('搜索「旧梦」只剩 1 张卡', dreamCount === 1, `实得 ${dreamCount}`);
+check('搜索能定位商品', (await pickerCards().count()) === 1);
 await search.fill('yxc');
-await page.waitForTimeout(400);
-// 这三个商品都没有 SKU，所以按 SKU 搜应该是空的 —— 顺便确认「搜不到就是空」而不是兜底全量
-check('搜不存在的关键词时是真的空', (await pickerCards().count()) === 0);
-check('空白时给出文案', (await comps.locator('.vp-empty').count()) === 1);
+check('无匹配时不兜底为全部', (await pickerCards().count()) === 0);
+check('无匹配时有清晰提示', (await picker.getByText('没有匹配的商品', { exact: true }).count()) === 1);
 await search.fill('');
-await page.waitForTimeout(400);
-const backCount = await pickerCards().count();
-check('清空搜索后恢复 3 张卡', backCount === 3, `实得 ${backCount}`);
-
-// —— 点卡片选中
-await pickerCards().filter({ hasText: '《夜行车》上卷' }).first().locator('.menu-card-info').click();
-await page.waitForTimeout(500);
-check('点卡片后面板收起', (await comps.locator('.vp-grid').count()) === 0);
-check('摘要行显示被选中的商品', (await block.locator('.vp-name').innerText()) === '《夜行车》上卷');
-check('摘要行显示规格', (await block.locator('.vp-sub').innerText()) === '默认规格');
-
-// —— 再打开时选中态要能看出来
-await block.locator('.vp-toggle').click();
-await page.waitForTimeout(500);
-const chosen = pickerCards().filter({ hasText: '《夜行车》上卷' }).first();
-check('选中卡带 picked 高亮', (await chosen.getAttribute('class')).includes('picked'));
-check('选中卡上的按钮变成「已选」', (await chosen.locator('.pick-btn').innerText()) === '已选');
-check('只有一张卡是选中态', (await comps.locator('.vp-grid .menu-card-cover.picked').count()) === 1);
+await picker.getByRole('checkbox', { name: /选择 《夜行车》上卷/ }).check();
+check('勾选后仍留在商品库', await picker.isVisible());
+const selected = picker.getByRole('region', { name: '已选成分' });
+check('已选列表同步更新', (await selected.locator('.bundle-member').count()) === 1);
+await selected.getByRole('spinbutton').fill('2');
+await shot('ui10-3-picker-cards');
+await picker.getByRole('button', { name: /确认选择/ }).click();
+const block = page.locator('.bundle-comps .bundle-member').first();
+check('确认后摘要显示商品名', (await block.locator('.bundle-member-info strong').innerText()) === '《夜行车》上卷');
+check('确认后摘要带回数量', (await block.getByRole('spinbutton').inputValue()) === '2');
+await page.locator('.bundle-comps').getByRole('button', { name: '选择 / 添加商品', exact: true }).click();
+check('重新进入保留已选状态', await picker.getByRole('checkbox', { name: /选择 《夜行车》上卷/ }).isChecked());
 await shot('ui10-4-picker-selected');
 await page.keyboard.press('Escape');
-await page.waitForTimeout(300);
-check('Esc 能收起面板', (await comps.locator('.vp-grid').count()) === 0);
-
-await block.locator('input[type="number"]').fill('2');
-await page.waitForTimeout(300);
-
-await page.locator('.modal').getByRole('button', { name: '创建' }).click();
-await page.waitForTimeout(2000);
+check('Esc 返回原编辑表单', (await picker.count()) === 0);
+await page.locator('.modal').getByRole('button', { name: '创建', exact: true }).click();
+await page.locator('.modal').waitFor({ state: 'hidden' });
 check('创建后回到列表且没有报错', (await page.locator('.modal').count()) === 0, errors[0] ?? '');
-
-// 再打开编辑，确认成分真的落盘了 —— 这是「一次配齐」的关键证据
 await page.locator('tr').filter({ hasText: '三件套' }).getByRole('button', { name: '编辑' }).click();
-await page.waitForTimeout(1200);
-const editBlock = page.locator('.modal .bundle-comps .bundle-comp').first();
-check('重新打开编辑时成分还在', (await editBlock.locator('.vp-name').innerText()) === '《夜行车》上卷');
-check('数量也带出来了', (await editBlock.locator('input[type="number"]').inputValue()) === '2');
+const editBlock = page.locator('.bundle-comps .bundle-member').first();
+await editBlock.waitFor();
+check('重开编辑时成分仍在', (await editBlock.locator('.bundle-member-info strong').innerText()) === '《夜行车》上卷');
+check('重开编辑时数量仍在', (await editBlock.getByRole('spinbutton').inputValue()) === '2');
 await shot('ui10-5-persisted');
-await page.locator('.modal').getByRole('button', { name: '取消' }).click();
-await page.waitForTimeout(500);
+await page.locator('.modal').getByRole('button', { name: '取消', exact: true }).click();
 
 // 套装是在「全部加入本场」之后才建的，得再补一次
 await gotoStaff('staff/events');

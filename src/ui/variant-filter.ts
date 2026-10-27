@@ -10,14 +10,19 @@ import type { MenuCardItem } from './MenuCard';
 export interface VariantOption {
   id: string;
   item: MenuCardItem;
-  /** 参与搜索但卡片上不显示（SKU 是拿来对账的，不是拿来认封面的） */
+  /** 支持搜索，并显示在选择器中，帮助区分同名商品。 */
   sku: string | null;
+  categoryId?: string | null;
+  archived?: boolean;
+  searchText?: string;
 }
 
 export function filterVariantOptions(options: VariantOption[], keyword: string): VariantOption[] {
   const kw = keyword.trim().toLowerCase();
   if (!kw) return options;
-  return options.filter((o) =>
-    `${o.item.product_name} ${o.item.variant_name} ${o.sku ?? ''}`.toLowerCase().includes(kw)
-  );
+  const terms = kw.split(/\s+/);
+  return options.filter((o) => {
+    const haystack = `${o.item.product_name} ${o.item.variant_name} ${o.sku ?? ''} ${o.item.category_name ?? ''} ${o.searchText ?? ''}`.toLowerCase();
+    return terms.every(term => haystack.includes(term));
+  });
 }
