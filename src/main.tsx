@@ -2,6 +2,9 @@ import { createRoot } from 'react-dom/client';
 import App from './App';
 import { Toast } from './ui/components';
 import './styles.css';
+import { initializeTheme } from './theme';
+
+initializeTheme();
 
 /**
  * PWA 更新：registerType 为 prompt，营业页不会自动 reload。

@@ -1,4 +1,5 @@
 :root {
+  color-scheme: light;
   /* ==========================================================================
      设计令牌 v2（2026-09-16）
      来源：Ardot 画板「01 设计规范」。评审稿见工作区的 doujin-pos-tokens-v2.css。
@@ -33,12 +34,14 @@
   --line-strong: #cbd5e1;
   --ink: #334155;          /* 10.35:1 */
   --ink-2: #5b6b80;        /*  5.44:1 */
-  --ink-3: #64748b;        /*  4.76:1 —— 正文下限，别再往下调 */
+  --ink-3: #5f6f84;        /* 辅助文字在 surface-2 上也保持 4.5:1 */
   --ink-disabled: #94a3b8; /* 仅禁用态，不承载正文 */
 
   /* ------------------------------------------------------- 主色（玫瑰） */
-  --accent: #d23760;        /* 承载小字的填充与文字，4.71:1 */
+  --accent: #c02b54;        /* 文字在 accent-soft 上也达到 4.5:1；填充单列 */
   --accent-hover: #b92c51;
+  --accent-fill: #d23760;
+  --accent-fill-hover: #b92c51;
   --accent-soft: #fde7ee;
   --accent-line: #f5a9bc;
   --accent-brand: #f16884;  /* 只用于大面积装饰，禁止承载小字 */
@@ -48,11 +51,16 @@
   --ok-soft: #dcfce7;
   --warn: #b45309;
   --warn-soft: #fef3c7;
-  --danger: #dc2626;
+  --danger: #c81e1e;
   --danger-hover: #b91c1c;
+  --danger-fill: #dc2626;
+  --danger-fill-hover: #b91c1c;
   --danger-soft: #fee2e2;
   --inverse: #0f172a;       /* 购物车条 / 深色浮层 */
   --inverse-ink: #ffffff;
+  --notice-line: #fde68a;
+  --danger-line: #fecaca;
+  --ok-line: #bbf7d0;
 
   /* ---------------------------------------------------------------- 圆角 */
   --r-sm: 8px;    /* 按钮 / 输入框 / 缩略图 */
@@ -380,17 +388,19 @@ button, .btn {
    而这一条是 (0,2,1) —— 悬停一压就赢。iPad 上点一下分类胶囊之后 :hover
    会一直粘着，选中项于是变成白字压在 --surface-2 上：字还在，但看不见。
    排除 .active 之后，选中态在任何指针状态下都归 .active 规则管。 */
-button:hover:not(:disabled):not(.active), .btn:hover:not(.active) { background: var(--surface-2); }
+button:where(:hover):not(:disabled):where(:not(.active, .primary, .danger, .add-btn, .pos-add, .on)),
+.btn:where(:hover):where(:not(.active, .primary, .danger)) { background: var(--surface-2); }
 button:disabled { opacity: 0.5; cursor: not-allowed; }
-button.primary, .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-button.primary:hover:not(:disabled) { background: var(--accent-hover); }
-button.danger, .btn.danger { background: var(--danger); border-color: var(--danger); color: #fff; }
-button.danger:hover:not(:disabled) { background: var(--danger-hover); }
+button.primary, .btn.primary { background: var(--accent-fill); border-color: var(--accent); color: #fff; }
+button.primary:hover:not(:disabled) { background: var(--accent-fill-hover); }
+button.danger, .btn.danger { background: var(--danger-fill); border-color: var(--danger); color: #fff; }
+button.danger:hover:not(:disabled) { background: var(--danger-fill-hover); }
 button.ghost { background: transparent; }
 button.small { min-height: var(--tap-sm); padding: 0 10px; font-size: var(--fs-small); }
 button.block { width: 100%; }
 
-input[type='text'], input[type='number'], input[type='search'], input[type='password'], select, textarea {
+input:not([type]), input[type='text'], input[type='number'], input[type='search'], input[type='password'],
+input[type='date'], input[type='time'], input[type='datetime-local'], select, textarea {
   min-height: var(--tap);
   padding: var(--sp-2) var(--sp-3);
   border-radius: var(--r-sm);
@@ -402,6 +412,9 @@ textarea { min-height: 88px; resize: vertical; }
 label.field { display: flex; flex-direction: column; gap: var(--sp-1); font-size: var(--fs-small); color: var(--ink-2); }
 label.check { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-small); min-height: var(--tap-sm); }
 label.check input { width: 18px; height: 18px; min-height: 0; }
+input[type='checkbox'], input[type='radio'] { accent-color: var(--accent-fill); }
+input[type='file'] { max-width: 100%; color: var(--ink-2); }
+input[type='file']::file-selector-button { font: inherit; min-height: var(--tap); margin-right: 10px; padding: 0 12px; border: 1px solid var(--line-strong); border-radius: var(--r-sm); background: var(--surface); color: var(--ink); cursor: pointer; }
 
 
 /* ---------------------------------------------------- 问号说明（InfoDot）
@@ -515,11 +528,11 @@ label.check input { width: 18px; height: 18px; min-height: 0; }
   border-radius: var(--r-md);
   background: var(--warn-soft);
   color: var(--warn);
-  border: 1px solid #fde68a;
+  border: 1px solid var(--notice-line);
   font-size: var(--fs-small);
 }
-.notice.danger { background: var(--danger-soft); color: var(--danger); border-color: #fecaca; }
-.notice.ok { background: var(--ok-soft); color: var(--ok); border-color: #bbf7d0; }
+.notice.danger { background: var(--danger-soft); color: var(--danger); border-color: var(--danger-line); }
+.notice.ok { background: var(--ok-soft); color: var(--ok); border-color: var(--ok-line); }
 .notice.info { background: var(--surface-2); color: var(--ink-2); border-color: var(--line); }
 
 /* 「保存当前数据库」这一块（三条整库路径共用一份实现）。
@@ -605,17 +618,20 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   z-index: 60;
 }
 .modal {
+  display: flex;
+  flex-direction: column;
   background: var(--surface);
   border-radius: var(--r-xl);
   max-width: 560px;
   width: 100%;
   max-height: 88vh;
-  overflow: auto;
+  overflow: hidden;
   padding: var(--sp-5);
   box-shadow: var(--shadow-3);
 }
-.modal h2 { margin-top: 0; }
-.modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 18px; flex-wrap: wrap; }
+.modal > h2 { margin-top: 0; flex: none; }
+.modal-content { min-height: 0; overflow-y: auto; overscroll-behavior-y: contain; padding: 4px; margin: -4px; }
+.modal-actions { flex: none; display: flex; gap: 10px; justify-content: flex-end; margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--line); flex-wrap: wrap; }
 
 /* ------------------------------------------- 规格选择器（复用菜单卡 + 搜索）
    收起时只有一行摘要（缩略图 + 品名 / 规格名），点开才铺开菜单卡网格。
@@ -726,7 +742,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 }
 .pick-btn:hover { border-color: var(--accent); color: var(--accent); }
 .pick-btn.on {
-  background: var(--accent);
+  background: var(--accent-fill);
   border-color: var(--accent);
   color: #fff;
 }
@@ -751,7 +767,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   align-items: center;
   gap: var(--sp-3);
   padding: 14px var(--sp-4);
-  background: #fff;
+  background: var(--surface);
   position: sticky;
   top: 0;
   z-index: 10;
@@ -761,7 +777,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .kiosk-header .title { font-size: var(--fs-title); font-weight: 700; color: var(--ink); }
 
 .kiosk-hero {
-  background: #fff;
+  background: var(--surface);
   border-radius: 0 0 var(--r-xl) var(--r-xl);
   /* 上下各收一点：整块压成一行之后，上面已不需要留那么多。 */
   padding: 10px var(--sp-4) var(--sp-3);
@@ -832,7 +848,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   padding: 10px var(--sp-4);
   border-radius: var(--r-full);
   border: 1px solid var(--line);
-  background: #fff;
+  background: var(--surface);
   min-height: var(--tap);
   white-space: nowrap;
   cursor: pointer;
@@ -840,11 +856,11 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   font-size: var(--fs-body);
   transition: background-color 120ms ease, border-color 120ms ease;
 }
-.chip.active { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.chip.active { background: var(--accent-fill); border-color: var(--accent); color: #fff; font-weight: 600; }
 /* 选中且指针压在上面：再深一档，但仍然是「白字 + 深底」。
    原来这里只有上面一条，指针一停上去背景就被全局 hover 规则换成浅灰。 */
 .chip.active:hover:not(:disabled) {
-  background: var(--accent-hover);
+  background: var(--accent-fill-hover);
   border-color: var(--accent-hover);
   color: #fff;
 }
@@ -907,7 +923,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .menu-card .thumb-placeholder {
   width: 100%;
   aspect-ratio: 3 / 4;
-  background: repeating-linear-gradient(45deg, #eef2f6, #eef2f6 10px, var(--line) 10px, var(--line) 20px);
+  background: repeating-linear-gradient(45deg, var(--surface-2), var(--surface-2) 10px, var(--line) 10px, var(--line) 20px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -924,7 +940,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .menu-card.sold-out .name,
 .menu-card.sold-out .price { color: var(--ink-3); }
 .menu-card.sold-out .badge.danger {
-  background: var(--danger);
+  background: var(--danger-fill);
   color: #fff;
   border-color: transparent;
   font-weight: 500;
@@ -942,14 +958,14 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
      这是排队场景下点得最频繁的按钮，误触代价直接是收错单。 */
   min-height: var(--tap);
   font-weight: 600;
-  background: var(--accent);
+  background: var(--accent-fill);
   color: #fff;
   border: none;
   border-radius: var(--r-sm);
   font-size: var(--fs-body);
   transition: background-color 120ms ease, transform 120ms ease;
 }
-.add-btn:hover { background: var(--accent-hover); }
+.add-btn:hover { background: var(--accent-fill-hover); }
 /* 按下时给一点物理反馈。排队场景下动效要极短，120ms 是"确认收到"而非"表演" */
 .add-btn:active { transform: scale(0.97); }
 .add-btn:disabled {
@@ -972,7 +988,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
    注意：这里所有规则都带 .menu-card-cover，摊主收银的卡片不带这个类，
    所以收银台不受影响。 */
 .menu-card-cover {
-  background: #fff;
+  background: var(--surface);
   border: 0;
   border-radius: var(--r-lg);
   padding: var(--sp-2);
@@ -1101,7 +1117,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   flex: none;
   box-shadow: 0 2px 6px rgba(210, 55, 96, 0.4);
 }
-.menu-card-cover .add-btn:hover { background: var(--accent-hover); }
+.menu-card-cover .add-btn:hover { background: var(--accent-fill-hover); }
 .menu-card-cover.sold-out .thumb,
 .menu-card-cover.sold-out .thumb-placeholder { opacity: 0.55; filter: grayscale(0.9); }
 .menu-card-cover.sold-out .price { color: var(--ink-3); }
@@ -1145,7 +1161,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .cart-bar .spacer { flex: 1; }
 .cart-bar .strong { color: var(--inverse-ink); font-weight: 700; font-variant-numeric: tabular-nums; }
 .cart-bar .count {
-  background: var(--accent);
+  background: var(--accent-fill);
   color: #fff;
   border-radius: var(--r-full);
   padding: 2px 10px;
@@ -1569,7 +1585,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 }
 .seg-item:hover:not(:disabled) { background: var(--surface-2); }
 .seg-item.active {
-  background: var(--accent);
+  background: var(--accent-fill);
   border-color: var(--accent);
   color: #fff;
   font-weight: 600;
@@ -1577,7 +1593,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 /* 同 .chip.active：选中态在 hover 下必须保持深底白字，
    否则「微信支付」被选中后鼠标一停上去就变成白字浅底。 */
 .seg-item.active:hover:not(:disabled) {
-  background: var(--accent-hover);
+  background: var(--accent-fill-hover);
   border-color: var(--accent-hover);
   color: #fff;
 }
@@ -1729,7 +1745,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   padding: 0;
   border: 0;
   border-radius: var(--r-full);
-  background: var(--accent);
+  background: var(--accent-fill);
   color: #fff;
   font-size: var(--fs-title);
   line-height: 1;
@@ -1737,7 +1753,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   place-items: center;
   flex: none;
 }
-.pos-add:hover:not(:disabled) { background: var(--accent-hover); }
+.pos-add:hover:not(:disabled) { background: var(--accent-fill-hover); }
 .pos-add:disabled { background: var(--surface-2); color: var(--ink-3); border: 1px solid var(--line); }
 /* 已在单据里的商品：把「+」换成数量徽章。减项在右侧订单栏里做，
    那里有位置放步进器；网格里塞步进器会把卡片撑高一倍，
@@ -2138,3 +2154,76 @@ html.standalone-safe-frame {
 .side-cart-total { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 8px; }
 .side-cart-total strong { font-size: var(--fs-lead); color: var(--accent); overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
 .side-cart-footer .primary { min-height: 48px; }
+
+/* Night palette adapted from the supplied design. Text and filled buttons have
+   separate accent roles; white labels must never sit on the light pink ink. */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #14161c;
+  --surface: #1b1e26;
+  --surface-2: #232833;
+  --line: #2c313c;
+  --line-strong: #566174;
+  --ink: #e9ecf1;
+  --ink-2: #a9b2c1;
+  --ink-3: #9aa4b5;
+  --ink-disabled: #8b94a4;
+  --accent: #f2799a;
+  --accent-hover: #f59ab3;
+  --accent-fill: #c9305a;
+  --accent-fill-hover: #b32a50;
+  --accent-soft: #3a1f2a;
+  --accent-line: #794053;
+  --ok: #5fd68a;
+  --ok-soft: #14301f;
+  --warn: #f0b429;
+  --warn-soft: #33270c;
+  --danger: #f4796f;
+  --danger-fill: #c2413a;
+  --danger-fill-hover: #ac342e;
+  --danger-soft: #3a1d1d;
+  --notice-line: #66501c;
+  --danger-line: #713b38;
+  --ok-line: #28533a;
+  --inverse: #262b36;
+  --inverse-ink: #eef1f6;
+  --shadow-1: 0 1px 2px rgb(0 0 0 / 30%);
+  --shadow-2: 0 4px 16px rgb(0 0 0 / 40%);
+  --shadow-3: 0 20px 60px rgb(0 0 0 / 65%);
+  --shadow: 0 1px 2px rgb(0 0 0 / 30%), 0 4px 16px rgb(0 0 0 / 30%);
+}
+
+/* Disabled controls use a neutral surface in both palettes. */
+button:disabled,
+button.primary:disabled,
+button.danger:disabled,
+.cart-bar button:disabled,
+.add-btn:disabled,
+.pos-add:disabled {
+  opacity: 1;
+  background: var(--surface-2);
+  border-color: var(--line);
+  color: var(--ink-3);
+  box-shadow: none;
+  cursor: not-allowed;
+}
+input:disabled, select:disabled, textarea:disabled { color: var(--ink-3); opacity: 1; }
+
+[data-theme='dark'] .toast { background: var(--inverse); color: var(--inverse-ink); border: 1px solid var(--line-strong); }
+[data-theme='dark'] .modal-backdrop { background: rgb(6 8 12 / 70%); }
+[data-theme='dark'] .menu-order { border-color: var(--line); box-shadow: 0 0 0 40px rgb(0 0 0 / 55%); }
+[data-theme='dark'] .menu-order-item.dragging { outline-color: var(--accent); }
+[data-theme='dark'] .side-cart-item { box-shadow: var(--shadow-1); }
+[data-theme='dark'] .cart-bar { box-shadow: 0 8px 24px rgb(0 0 0 / 45%); }
+[data-theme='dark'] .cart-bar button:not(:disabled) { background: var(--inverse-ink); color: var(--inverse); }
+/* Product art and QR pixels retain their original colors. QR quiet zones stay white. */
+.qr-box img { background: #fff; color-scheme: light; }
+
+.theme-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.theme-choice { display: flex; align-items: center; gap: 10px; min-height: 76px; padding: 12px; border: 1px solid var(--line-strong); border-radius: var(--r-md); cursor: pointer; }
+.theme-choice.selected { background: var(--accent-soft); border-color: var(--accent); }
+.theme-choice > input { flex: none; width: 18px; height: 18px; accent-color: var(--accent-fill); }
+.theme-choice > span { min-width: 0; }
+.theme-choice strong, .theme-choice .tiny { display: block; }
+.theme-choice .tiny { margin-top: 4px; }
+@media (max-width: 560px) { .theme-options { grid-template-columns: 1fr; gap: 8px; } .theme-choice { min-height: 64px; } }
