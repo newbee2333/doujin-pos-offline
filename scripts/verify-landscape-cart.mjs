@@ -15,6 +15,7 @@ try {
       Object.defineProperty(navigator, 'standalone', { value: true });
     });
     const page = await ctx.newPage();
+    await page.clock.install();
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     await page.goto(base, { waitUntil: 'domcontentloaded' });
@@ -79,6 +80,12 @@ try {
     const first = menu.locator('.menu-card').first();
     await first.locator('.add-btn').click();
     assert.equal(await line().locator('.qty .value').innerText(), '1');
+    // Advance past the former five-minute idle period and thirty-second grace period.
+    await page.clock.fastForward(5 * 60 * 1000 + 1000);
+    assert.equal(await page.getByText(/长时间无操作，购物车将在/).count(), 0, 'idle cart has no clearing countdown');
+    await page.clock.fastForward(31 * 1000);
+    assert.equal(await cart.locator('.side-cart-item').count(), 1, 'idle cart keeps its items');
+    assert.match(await cart.locator('.side-cart-total').innerText(), /25\.00/);
     await line().getByRole('button', { name: '+', exact: true }).tap();
     assert.equal(await first.locator('.qty .value').innerText(), '2');
     assert.equal(await line().getByRole('button', { name: '+', exact: true }).isDisabled(), true, 'stock upper bound');
@@ -135,6 +142,15 @@ try {
       bounds = await checkout.boundingBox();
       assert.ok(bounds.y >= 0 && bounds.y + bounds.height <= size.height);
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+      assert.ok(await cart.locator('.side-cart-items').evaluate(el => el.scrollWidth <= el.clientWidth), 'cart cards do not overflow the narrow sidebar');
+      const itemBounds = await line().boundingBox();
+      const controls = await line().locator('.qty').boundingBox();
+      assert.ok(controls.x >= itemBounds.x && controls.x + controls.width <= itemBounds.x + itemBounds.width, 'quantity controls stay inside the card');
+      for (const button of await line().locator('.qty button').all()) {
+        const target = await button.boundingBox();
+        assert.ok(target.width >= 44 && target.height >= 44, 'quantity buttons remain touch sized');
+      }
+      await page.screenshot({ path: `test-results/landscape-cart-${size.width}-${standalone ? 'standalone' : 'browser'}.png` });
     }
     await page.setViewportSize({ width: 1180, height: 820 });
     // Toggle the persisted layout through the staff UI, without replacing the cart.

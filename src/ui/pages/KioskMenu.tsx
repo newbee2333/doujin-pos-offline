@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getKioskMenu } from '../../services/orders';
 import { listCategories } from '../../services/catalog';
@@ -9,9 +9,6 @@ import { useApp } from '../../store';
 import { AssetImage, ErrorBox, Modal, Money, QtyStepper, Spinner, useAsync } from '../components';
 import MenuCard from '../MenuCard';
 import KioskSideCart from '../KioskSideCart';
-
-const IDLE_MS = 5 * 60 * 1000;
-const WARN_MS = 30 * 1000;
 
 export default function KioskMenuPage() {
   const navigate = useNavigate();
@@ -29,42 +26,6 @@ export default function KioskMenuPage() {
   const menu = useAsync(() => (eventId ? getKioskMenu(eventId) : Promise.resolve([])), [eventId]);
   const cats = useAsync(() => listCategories(false), []);
   const layout = useAsync(getLandscapeCartEnabled, []);
-
-  // 未提交购物车 5 分钟无操作提示，30 秒内无响应才清空
-  const [warnAt, setWarnAt] = useState<number | null>(null);
-  const [left, setLeft] = useState(30);
-  const lastTouch = useRef(Date.now());
-  const touch = () => {
-    lastTouch.current = Date.now();
-    setWarnAt(null);
-  };
-
-  useEffect(() => {
-    const t = setInterval(() => {
-      if (cart.length === 0) {
-        setWarnAt(null);
-        return;
-      }
-      const idle = Date.now() - lastTouch.current;
-      if (idle > IDLE_MS) {
-        setWarnAt((w) => w ?? Date.now());
-      }
-    }, 1000);
-    return () => clearInterval(t);
-  }, [cart.length]);
-
-  useEffect(() => {
-    if (warnAt === null) return;
-    const t = setInterval(() => {
-      const remain = Math.max(0, Math.ceil((WARN_MS - (Date.now() - warnAt)) / 1000));
-      setLeft(remain);
-      if (remain <= 0) {
-        clearCart();
-        setWarnAt(null);
-      }
-    }, 250);
-    return () => clearInterval(t);
-  }, [warnAt, clearCart]);
 
   const filtered = useMemo(() => {
     const list = menu.data ?? [];
@@ -106,7 +67,6 @@ export default function KioskMenuPage() {
   }
 
   function addToCart(item: MenuItem, quantity: number) {
-    touch();
     const next = [...cart];
     const idx = next.findIndex((c) => c.variantId === item.variant_id);
     if (idx >= 0) next[idx] = { ...next[idx], quantity: next[idx].quantity + quantity };
@@ -125,7 +85,6 @@ export default function KioskMenuPage() {
   }
 
   function updateCartQty(variantId: string, quantity: number) {
-    touch();
     if (quantity <= 0) {
       setCart(cart.filter((c) => c.variantId !== variantId));
       return;
@@ -141,7 +100,7 @@ export default function KioskMenuPage() {
   }
 
   return (
-    <div className={`kiosk kiosk-menu${layout.data ? ' landscape-cart-enabled' : ''}`} onPointerDown={touch} onKeyDown={touch}>
+    <div className={`kiosk kiosk-menu${layout.data ? ' landscape-cart-enabled' : ''}`}>
       {/* 页头只占一行：标题块 / 分类胶囊 / 搜索框 / 摊主处理。
           分类原来自己占一整行、搜索框占满整行，两行加起来 145px；
           合起来之后 68px，省下的正好是一整行商品 ——
@@ -189,10 +148,7 @@ export default function KioskMenuPage() {
               type="search"
               placeholder="搜索商品名 / 分类"
               value={keyword}
-              onChange={(e) => {
-                setKeyword(e.target.value);
-                touch();
-              }}
+              onChange={(e) => setKeyword(e.target.value)}
             />
           </div>
           <button className="small ghost" onClick={() => navigate('/staff/pending')}>
@@ -200,12 +156,6 @@ export default function KioskMenuPage() {
           </button>
         </div>
       </div>
-
-      {warnAt !== null ? (
-        <div className="notice" style={{ margin: '8px 18px 0' }}>
-          长时间无操作，购物车将在 {left} 秒后清空。点击任意处继续使用。
-        </div>
-      ) : null}
 
       <div className="kiosk-menu-body">
       <div className="menu-grid">
@@ -238,7 +188,6 @@ export default function KioskMenuPage() {
                 if (soldOut) return;
                 setQty(Math.max(1, cartQty || 1));
                 setDetail(item);
-                touch();
               }}
             />
           );
@@ -250,7 +199,7 @@ export default function KioskMenuPage() {
 
       {clearing ? <Modal title="清空购物车" onClose={() => setClearing(false)} actions={<>
         <button onClick={() => setClearing(false)}>取消</button>
-        <button className="danger" onClick={() => { clearCart(); setClearing(false); touch(); }}>确认清空</button>
+        <button className="danger" onClick={() => { clearCart(); setClearing(false); }}>确认清空</button>
       </>}><p>要移除购物车里的全部商品吗？</p></Modal> : null}
 
       {detail ? (
