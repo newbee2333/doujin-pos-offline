@@ -21,7 +21,7 @@ const browser = await chromium.launch({
   ...(CHANNEL ? { channel: CHANNEL } : {}),
   args: ['--no-sandbox']
 });
-const ctx = await browser.newContext();
+const ctx = await browser.newContext({ colorScheme: process.env.SMOKE_COLOR_SCHEME === 'dark' ? 'dark' : 'light' });
 ctx.on('dialog', (d) => d.accept());
 // Opt-in layout simulation; this does not emulate iPadOS compositing.
 if (process.env.SMOKE_STANDALONE === '1') {

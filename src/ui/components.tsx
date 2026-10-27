@@ -133,7 +133,7 @@ export function Modal({
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <h2>{title}</h2>
-        {children}
+        <div className="modal-content">{children}</div>
         {actions ? <div className="modal-actions">{actions}</div> : null}
       </div>
     </div>

@@ -5,6 +5,13 @@ import { checkCapabilities, requestPersistence } from '../../db/storage-guard';
 import { errorMessage, useApp } from '../../store';
 import { ErrorBox, Field, SetPinFlow, Spinner, useAsync } from '../components';
 import { formatBytes } from '../../domain/image';
+import { useTheme, type ThemePreference } from '../../theme';
+
+const THEME_OPTIONS: { value: ThemePreference; label: string; hint: string }[] = [
+  { value: 'system', label: '跟随系统', hint: '随设备自动切换' },
+  { value: 'light', label: '浅色', hint: '始终使用浅色界面' },
+  { value: 'dark', label: '深色', hint: '始终使用夜间界面' }
+];
 
 export default function SettingsPage() {
   const diagnostics = useApp((s) => s.diagnostics);
@@ -16,6 +23,7 @@ export default function SettingsPage() {
   const [layoutBusy, setLayoutBusy] = useState(false);
   const [layoutError, setLayoutError] = useState<string | null>(null);
   const layout = useAsync(getLandscapeCartEnabled, []);
+  const { preference, setPreference, storageError } = useTheme();
 
   const pinSet = useAsync(() => isPinSet(), []);
   const persisted = useAsync(() => requestPersistence(), []);
@@ -24,6 +32,21 @@ export default function SettingsPage() {
   return (
     <div className="page narrow">
       <h1>设置</h1>
+
+      <div className="card">
+        <h2>外观</h2>
+        <div className="theme-options" role="radiogroup" aria-label="外观模式">
+          {THEME_OPTIONS.map(option => (
+            <label className={`theme-choice${preference === option.value ? ' selected' : ''}`} key={option.value}>
+              <input type="radio" name="theme" value={option.value} checked={preference === option.value}
+                onChange={() => setPreference(option.value)} />
+              <span><strong>{option.label}</strong><span className="tiny muted">{option.hint}</span></span>
+            </label>
+          ))}
+        </div>
+        <p className="small muted">默认跟随系统，游客菜单与后台同步切换。选择只保存在这台设备的浏览器中，不随数据库备份迁移。</p>
+        {storageError ? <p className="notice" role="status">当前浏览器无法保存本次外观选择；当前窗口已生效，重新打开后可能恢复原设置。</p> : null}
+      </div>
 
       <div className="card">
         <h2>游客菜单</h2>
