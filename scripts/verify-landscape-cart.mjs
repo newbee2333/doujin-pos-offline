@@ -135,6 +135,15 @@ try {
       bounds = await checkout.boundingBox();
       assert.ok(bounds.y >= 0 && bounds.y + bounds.height <= size.height);
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+      assert.ok(await cart.locator('.side-cart-items').evaluate(el => el.scrollWidth <= el.clientWidth), 'cart cards do not overflow the narrow sidebar');
+      const itemBounds = await line().boundingBox();
+      const controls = await line().locator('.qty').boundingBox();
+      assert.ok(controls.x >= itemBounds.x && controls.x + controls.width <= itemBounds.x + itemBounds.width, 'quantity controls stay inside the card');
+      for (const button of await line().locator('.qty button').all()) {
+        const target = await button.boundingBox();
+        assert.ok(target.width >= 44 && target.height >= 44, 'quantity buttons remain touch sized');
+      }
+      await page.screenshot({ path: `test-results/landscape-cart-${size.width}-${standalone ? 'standalone' : 'browser'}.png` });
     }
     await page.setViewportSize({ width: 1180, height: 820 });
     // Toggle the persisted layout through the staff UI, without replacing the cart.

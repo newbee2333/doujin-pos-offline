@@ -1,6 +1,6 @@
 import type { CartItem } from '../store';
 import type { Currency } from '../domain/types';
-import { formatMoney } from '../domain/money';
+import { formatAmountOnly, formatMoney } from '../domain/money';
 import { AssetImage, QtyStepper } from './components';
 
 /** The landscape menu shares the same cart and checkout as the compact layout. */
@@ -38,13 +38,16 @@ export default function KioskSideCart({ cart, currency, onSetQty, onClear, onChe
             <div className="side-cart-product">
               <AssetImage assetId={item.coverAssetId} alt={item.productName} className="side-cart-thumb" />
               <div className="side-cart-product-info">
-                <div className="strong">{item.productName}</div>
+                <div className="strong side-cart-product-name">{item.productName}</div>
                 {item.variantName !== '默认规格' ? <div className="tiny muted">{item.variantName}</div> : null}
-                <div className="tiny muted">{formatMoney(item.priceMinor, currency)} / 件</div>
+                <div className="tiny muted">{formatMoney(item.priceMinor, currency)} × {item.quantity}</div>
               </div>
             </div>
             <div className="side-cart-item-actions">
-              <span className="strong side-cart-line-total">{formatMoney(item.priceMinor * item.quantity, currency)}</span>
+              <span className="strong side-cart-line-total">
+                <span>{formatAmountOnly(item.priceMinor * item.quantity, currency)}</span>
+                <small>{currency}</small>
+              </span>
               <QtyStepper value={item.quantity} min={0} max={item.maxAvailable} onChange={qty => onSetQty(item.variantId, qty)} />
             </div>
           </article>
