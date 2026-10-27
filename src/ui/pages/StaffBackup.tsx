@@ -10,6 +10,7 @@ import {
 import { getEvent } from '../../services/events';
 import { errorMessage, openDatabase, resetDatabaseBinding, useApp } from '../../store';
 import SaveDatabase from '../SaveDatabase';
+import BackupNudge from '../BackupNudge';
 import SetupPage from './Setup';
 import { ErrorBox, Spinner, useAsync } from '../components';
 
@@ -63,8 +64,9 @@ export default function StaffBackupPage() {
     <div className="page narrow">
       <h1>备份与恢复</h1>
 
-      <div className="card">
+      <div className="card" id="backup-save">
         <h2>保存当前数据库</h2>
+        <BackupNudge state={backup.data} />
         <p className="small muted">
           导出为标准 SQLite 文件，包含商品、图片、收款码、展会配置、库存、订单、收款、退款、纠错与现金流水。
           导出期间会短暂暂停保存新操作，等待当前保存完成，确保备份数据完整。
@@ -74,6 +76,7 @@ export default function StaffBackupPage() {
           eventName={event.data?.name}
           label="导出数据库"
           reloadKey={savedAt}
+          onExported={backup.reload}
           onSaved={() => {
             backup.reload();
             // 下面两张卡的提醒强度取决于这个时间戳，一起刷新。

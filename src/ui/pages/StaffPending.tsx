@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { confirmPayment, getOrderDetail, listOrders, voidOrder } from '../../services/orders';
 import { getEvent, getEventPaymentMethods } from '../../services/events';
 import { listPaymentMethods } from '../../services/events';
@@ -24,13 +25,14 @@ function waitedMinutes(iso: string): number {
 }
 
 export default function StaffPendingPage() {
+  const [params] = useSearchParams();
   const eventId = useApp((s) => s.currentEventId);
   const showToast = useApp((s) => s.showToast);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [methodFor, setMethodFor] = useState<Record<string, string>>({});
   const [tenderedFor, setTenderedFor] = useState<Record<string, string>>({});
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(() => params.get('order'));
 
   const orders = useAsync(
     () => (eventId ? listOrders({ eventId, status: 'pending_payment' }) : Promise.resolve([])),
@@ -48,6 +50,8 @@ export default function StaffPendingPage() {
 
   // 选中项跟着数据走：列表刷新后如果那一单已经确认/取消，自动落到队首。
   useEffect(() => {
+    // 首次读取尚未返回时，不把主页指定的订单误当成「队列里不存在」。
+    if (orders.loading || orders.error) return;
     if (!queue.length) {
       setSelectedId(null);
       return;
@@ -55,7 +59,7 @@ export default function StaffPendingPage() {
     if (!selectedId || !queue.some((o) => o.id === selectedId)) {
       setSelectedId(queue[0].id);
     }
-  }, [queue, selectedId]);
+  }, [queue, selectedId, orders.loading, orders.error]);
 
   const selected = queue.find((o) => o.id === selectedId) ?? null;
 

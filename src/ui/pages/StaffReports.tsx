@@ -93,46 +93,25 @@ export default function StaffReportsPage() {
         ) : null}
       </div>
 
-      {/* 六个盒子改成一条带分隔线的数字条。原来每格各自一圈描边、每格 150px 起，
-          六个盒子占掉整整一行高度，但这一行要读的只是六个数字 ——
-          描边在这里没承载任何信息，去了反而更快扫。 */}
+      <ErrorBox message={dash.error} />
       {dash.data ? (
-        <div className="stat-strip">
-          <div className="cell">
-            <div className="label">销售额</div>
-            <div className="value">{formatMoney(dash.data.salesMinor, currency)}</div>
-          </div>
-          <div className="cell">
-            <div className="label">净销售额</div>
-            <div className="value">{formatMoney(dash.data.netSalesMinor, currency)}</div>
-          </div>
-          <div className="cell">
-            <div className="label">退款额</div>
-            <div className="value">{formatMoney(dash.data.refundMinor, currency)}</div>
-          </div>
-          <div className="cell">
-            <div className="label">成交 / 待付款 / 取消</div>
-            <div className="value">
-              {dash.data.counts.completed} / {dash.data.counts.pending_payment} / {dash.data.counts.voided}
-            </div>
-          </div>
-          <div className="cell">
-            <div className="label">销量 / 赠品发放</div>
-            <div className="value">
-              {dash.data.unitsSold} / {dash.data.giftUnits}
-            </div>
-          </div>
-          <div className="cell">
-            <div className="label">纠错额（审计）</div>
-            <div className="value">{formatMoney(dash.data.correctionMinor, currency)}</div>
-          </div>
-        </div>
+        <section className="report-overview" aria-label="营业概览">
+          <div className="report-primary"><span className="eyebrow">本场净销售额</span><strong>{formatMoney(dash.data.netSalesMinor, currency)}</strong><span className="small muted">销售额减退款额，未扣成本</span></div>
+          <div className="report-orders"><span className="eyebrow">已完成订单</span><strong>{dash.data.counts.completed}<small> 笔</small></strong><span className="small muted">待付款 {dash.data.counts.pending_payment} · 已取消 {dash.data.counts.voided}</span><span className="tiny muted">已退款 {dash.data.counts.refunded} · 已纠错 {dash.data.counts.corrected}</span></div>
+          <dl className="report-secondary">
+            <div><dt>销售额</dt><dd>{formatMoney(dash.data.salesMinor, currency)}</dd></div>
+            <div><dt>退款额</dt><dd>{formatMoney(dash.data.refundMinor, currency)}</dd></div>
+            <div><dt>销量 / 赠品发放</dt><dd>{dash.data.unitsSold} / {dash.data.giftUnits}<small> 件</small></dd></div>
+            <div><dt>纠错额（审计）</dt><dd>{formatMoney(dash.data.correctionMinor, currency)}</dd></div>
+          </dl>
+        </section>
       ) : null}
 
       <div className="cols-side" style={{ marginTop: 'var(--sp-4)' }}>
         <div className="stack">
           <div className="card">
             <h2>商品排行</h2>
+            <ErrorBox message={ranking.error} />
             <div className="table-wrap">
               <table className="zebra">
                 <thead>
@@ -144,6 +123,7 @@ export default function StaffReportsPage() {
                   </tr>
                 </thead>
                 <tbody>
+                  {!ranking.loading && !ranking.error && !ranking.data?.length ? <tr><td colSpan={4} className="muted">本场还没有商品销售记录。</td></tr> : null}
                   {ranking.data?.map((r, i) => (
                     <tr key={i}>
                       <td>
@@ -263,7 +243,7 @@ export default function StaffReportsPage() {
             会被表格淹掉 —— 而这一步做错（盘点填错、忘了保存）当天就结算不了。 */}
         <aside className="side-panel">
           <div className="side-panel-head">
-            <span className="strong">收摊结算</span>
+            <span className="strong">现金核对与收摊</span>
           </div>
 
           <div className="side-panel-body">

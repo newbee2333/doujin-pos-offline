@@ -20,7 +20,6 @@ import {
 } from './store';
 import { getCurrentEventId, isPinSet, setPin, verifyPin } from './services/system';
 import { ErrorBox, PinPad, SetPinFlow, Spinner } from './ui/components';
-import BackupNudge from './ui/BackupNudge';
 import SetupPage from './ui/pages/Setup';
 import HomePage from './ui/pages/Home';
 import HelpPage from './ui/pages/Help';
@@ -124,7 +123,7 @@ function DeclinedLimitedScreen() {
           这不影响换台设备或换种方式继续——你的数据没有被改动。
         </p>
         <p className="small muted">
-          受限营业只是意味着数据有被系统回收的可能，需要更勤地导出备份。
+          受限营业意味着本机数据有被浏览器回收的可能。
         </p>
         <button className="primary" onClick={bootstrap}>
           返回并重新选择
@@ -185,7 +184,7 @@ function useBootstrap() {
       if (!persistence.granted) {
         // 持久化未获批但 OPFS 可写：交给摊主在引导页决定是否受限营业
         const confirmed = window.confirm(
-          '浏览器未授予持久化存储权限。继续营业存在数据被系统回收的风险，需要频繁导出备份。\n\n选择「确定」进入受限营业模式，选择「取消」退出。'
+          '浏览器未授予持久化存储权限。本机数据可能被系统回收。\n\n选择「确定」进入受限营业模式，选择「取消」退出。'
         );
         if (!confirmed) {
           // 这里以前是 setStage('blocked')，会把它和「环境不支持」混为一谈：
@@ -358,7 +357,7 @@ function Sidebar() {
         <NavLink to="/help" className={({ isActive }) => (isActive ? 'active' : '')}>
           说明书
         </NavLink>
-        {limited ? <div className="side-note">受限营业模式：请频繁导出备份</div> : null}
+        {limited ? <div className="side-note">受限营业模式</div> : null}
         {staffUnlocked ? (
           <button className="small ghost" onClick={lockStaff}>
             锁定后台
@@ -398,8 +397,6 @@ function Shell() {
           </div>
         ) : null}
         <div className={isKiosk ? "kiosk-route" + (location.pathname === '/kiosk' ? ' kiosk-menu-route' : '') : 'content'}>
-          {/* 只在后台显示：游客付款过程中不弹后台信息 */}
-          {!isKiosk ? <BackupNudge /> : null}
           <Routes>
             <Route path="/" element={<HomePage />} />
             <Route path="/kiosk" element={<KioskMenuPage />} />
