@@ -60,7 +60,7 @@ try {
       const c = getComputedStyle(probe).color.match(/[\d.]+/g).slice(0, 3).map(Number).map(n => n / 255).map(n => n <= .04045 ? n / 12.92 : ((n + .055) / 1.055) ** 2.4);
       return c[0] * .2126 + c[1] * .7152 + c[2] * .0722;
     };
-    const pairs = [['--ink', '--surface'], ['--ink-2', '--surface'], ['--ink-3', '--surface-2'], ['--accent', '--accent-soft'], ['white', '--accent-fill'], ['--warn', '--warn-soft'], ['--danger', '--danger-soft']];
+    const pairs = [['--ink', '--surface'], ['--ink-2', '--surface'], ['--ink-3', '--surface-2'], ['--accent', '--accent-soft'], ['white', '--accent-fill'], ['--ok', '--ok-soft'], ['--warn', '--warn-soft'], ['--danger', '--danger-soft']];
     const result = pairs.map(([fg, bg]) => { const a = lum(fg), b = lum(bg); return { fg, bg, ratio: (Math.max(a, b) + .05) / (Math.min(a, b) + .05) }; });
     probe.remove(); return result;
   });
@@ -77,9 +77,10 @@ try {
     for (const [i, name] of ['春日来信', '月光幻想', '午后茶话会', '远方的旅人', '星屑与月光', '春天的声音'].entries()) {
       const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="300" height="400"><rect width="300" height="400" fill="${['#d5dfed', '#f1d2dc', '#d8d4ed'][i % 3]}"/><circle cx="225" cy="110" r="75" fill="white" opacity=".5"/><text x="24" y="300" font-size="28" fill="#334155">VOL. ${i + 1}</text></svg>`;
       const cover = await catalog.createAsset('image/svg+xml', 300, 400, new TextEncoder().encode(svg), `warm-cover-${i}`);
-      products.push(await catalog.createProduct({ name, type: 'non_stock', category_id: category.id, default_currency: 'CNY', default_price_minor: 2500, cover_asset_id: cover, sku: `BOOK-${i}` }));
+      products.push(await catalog.createProduct({ name, type: i === 5 ? 'normal' : 'non_stock', category_id: category.id, default_currency: 'CNY', default_price_minor: 2500, cover_asset_id: cover, sku: `BOOK-${i}` }));
     }
     await events.addVariantsToEvent(id, products.map(p => p.variantId));
+    await (await import('/src/services/inventory.ts')).initializeStock(id, products[5].variantId, 2);
     const cash = (await events.listPaymentMethods()).find(method => method.type === 'cash');
     await events.updatePaymentMethod(cash.id, { enabled: true });
     await events.setEventPaymentMethods(id, [cash.id]);
@@ -88,7 +89,7 @@ try {
   });
   await nav('/');
   await page.getByRole('region', { name: '开场准备' }).waitFor();
-  assert.match(await page.getByRole('region', { name: '当前展会' }).innerText(), /日期：未设置/);
+  assert.match(await page.getByRole('region', { name: '当前展会' }).innerText(), /日期\s*未设置/);
   await page.screenshot({ path: 'test-results/warm-workspace/home-draft.png', fullPage: true });
   const orders = await page.evaluate(async fixture => {
     const events = await import('/src/services/events.ts');
@@ -99,15 +100,51 @@ try {
     const pending = await orders.createPendingOrder({ eventId: fixture.id, lines: [{ variantId: fixture.products[1].variantId, quantity: 1 }], plannedPaymentMethodId: fixture.cashId });
     const refunded = await orders.staffDirectSale({ eventId: fixture.id, lines: [{ variantId: fixture.products[2].variantId, quantity: 1 }], paymentMethodId: fixture.cashId, tenderedMinor: 2500 });
     await orders.recordRefund({ orderId: refunded.orderId, paymentMethodId: fixture.cashId, reason: '合成回归退款', returns: {} });
-    return { paid, pending, dash: await reports.getDashboard(fixture.id) };
+    const laterPending = await orders.createPendingOrder({ eventId: fixture.id, lines: [{ variantId: fixture.products[5].variantId, quantity: 1 }], plannedPaymentMethodId: fixture.cashId });
+    return { paid, pending: laterPending, olderPending: pending, dash: await reports.getDashboard(fixture.id) };
   }, fixture);
   // Remount Home to reread the event status after the synthetic transactions.
   await nav('/staff/inventory'); await nav('/');
   await page.getByRole('region', { name: '当前展会' }).getByRole('button', { name: '摊主收银', exact: true }).waitFor();
   assert.equal(await page.locator('.home-workspace').innerText().then(t => t.includes('¥')), false, 'home does not expose sales amounts');
   assert.equal(await page.locator('.backup-reminder').count(), 0);
+  assert.match(await page.locator('.workspace-metrics button').filter({ hasText: '菜单商品' }).innerText(), /6\s*项规格/);
+  assert.match(await page.locator('.workspace-metrics button').filter({ hasText: '库存关注' }).innerText(), /1\s*项规格/);
   await page.screenshot({ path: 'test-results/warm-workspace/home-active.png', fullPage: true });
-  await page.locator('.recent-orders button').filter({ hasText: '春日来信' }).click();
+  for (const preference of ['light', 'dark']) {
+    await page.evaluate(async preference => {
+      const { useTheme } = await import('/src/theme.ts');
+      useTheme.getState().setLightPalette('default');
+      useTheme.getState().setPreference(preference);
+    }, preference);
+    assert.equal(await page.locator('.badge.ok').first().evaluate(el => getComputedStyle(el).backgroundColor), preference === 'dark' ? 'rgb(20, 48, 31)' : 'rgb(220, 252, 231)', 'other palettes retain their success colors');
+    await page.screenshot({ path: `test-results/warm-workspace/home-${preference}.png`, fullPage: true });
+  }
+  await page.evaluate(async () => {
+    const { useTheme } = await import('/src/theme.ts');
+    useTheme.getState().setPreference('system'); useTheme.getState().setLightPalette('warm');
+  });
+  for (const [card, heading] of [['已完成订单', '订单'], ['库存关注', '库存与流水']]) {
+    await page.locator('.workspace-metrics button').filter({ hasText: card }).click();
+    await page.getByRole('heading', { name: heading, exact: true }).waitFor();
+    await nav('/');
+  }
+  await page.getByRole('button', { name: '菜单预览与排序', exact: true }).click();
+  await page.locator('.preview-frame').waitFor();
+  await nav('/');
+  const secondEventId = await page.evaluate(async () => (await import('/src/services/events.ts')).createEvent({ name: '下一场准备', currency: 'JPY' }));
+  await page.getByRole('button', { name: '刷新数据', exact: true }).click();
+  await page.locator(`select[aria-label="切换展会"] option[value="${secondEventId}"]`).waitFor({ state: 'attached' });
+  await page.getByRole('combobox', { name: '切换展会', exact: true }).selectOption(secondEventId);
+  await page.getByRole('region', { name: '当前展会' }).getByRole('heading', { name: '下一场准备' }).waitFor();
+  assert.equal(await page.evaluate(async () => (await import('/src/services/system.ts')).getCurrentEventId()), secondEventId, 'switch persists the current event');
+  await page.getByRole('combobox', { name: '切换展会', exact: true }).selectOption(fixture.id);
+  await page.getByRole('region', { name: '当前展会' }).getByRole('heading', { name: '秋日纸上展' }).waitFor();
+  await page.locator('.recent-orders tr').filter({ hasText: '春天的声音' }).getByRole('button', { name: '去收款' }).click();
+  await page.locator('.queue-item.active').waitFor();
+  assert.match(await page.locator('.queue-item.active .queue-no').innerText(), /#4/);
+  await nav('/');
+  await page.locator('.recent-orders tr').filter({ hasText: '春日来信' }).getByRole('button', { name: '查看详情' }).click();
   await page.getByRole('dialog').waitFor();
   await page.getByRole('button', { name: '关闭', exact: true }).click();
   await page.getByRole('searchbox', { name: '搜索订单' }).fill('BOOK-1');
@@ -116,7 +153,7 @@ try {
   await page.getByRole('group', { name: '订单状态' }).getByRole('button', { name: '已完成', exact: true }).click();
   await page.getByRole('heading', { name: '没有匹配的订单' }).waitFor();
   await page.getByRole('button', { name: '清空筛选', exact: true }).first().click();
-  await until(() => page.locator('.order-list-row').count(), 3);
+  await until(() => page.locator('.order-list-row').count(), 4);
   await page.screenshot({ path: 'test-results/warm-workspace/orders.png', fullPage: true });
   await nav('/staff/reports');
   await page.getByRole('region', { name: '营业概览' }).waitFor();
@@ -185,19 +222,24 @@ try {
   await page.reload();
   await until(() => theme(page), 'warm');
   await page.locator('.kiosk-menu .menu-card').first().waitFor();
-  await page.evaluate(async ({ eventId, pendingId }) => {
+  await page.evaluate(async ({ eventId, pendingIds }) => {
     const orders = await import('/src/services/orders.ts');
     const events = await import('/src/services/events.ts');
     const { useApp } = await import('/src/store.ts');
-    await orders.voidOrder(pendingId, '合成回归取消');
+    for (const pendingId of pendingIds) await orders.voidOrder(pendingId, '合成回归取消');
     await events.closeEvent(eventId);
     useApp.getState().unlockStaff();
-  }, { eventId: fixture.id, pendingId: orders.pending.orderId });
+  }, { eventId: fixture.id, pendingIds: [orders.pending.orderId, orders.olderPending.orderId] });
   await mobileNav('/');
   await page.getByRole('region', { name: '当前展会' }).getByRole('button', { name: '查看本场报表', exact: true }).waitFor();
   assert.equal(await page.locator('.backup-reminder').count(), 0);
+  await page.screenshot({ path: 'test-results/warm-workspace/home-closed.png', fullPage: true });
+  await nav('/staff/pending');
+  await page.locator('.notice.ok').waitFor();
+  assert.equal(await page.locator('.notice.ok').evaluate(el => getComputedStyle(el).backgroundColor), 'rgb(237, 238, 220)', 'warm empty state uses muted olive');
+  await page.screenshot({ path: 'test-results/warm-workspace/pending-empty.png', fullPage: true });
   assert.deepEqual(errors, []);
-  console.log('PASS warm palette: contrast, system day/night, offline preference and reload; stage home, snapshot order filters/deep link, report values, backup-only compact reminder/export confirmation, editor validation/focus, phone layout and unchanged menu density');
+  console.log('PASS warm palette: contrast, muted success colors, system day/night and offline reload; stage home/cards, event switch, targeted pending order, snapshot order filters, report values, backup-only compact reminder/export confirmation, editor validation/focus, phone layout and unchanged menu density');
   await context.close();
 } finally {
   await browser.close();
