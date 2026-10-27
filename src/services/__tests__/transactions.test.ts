@@ -9,6 +9,7 @@ import {
   createPendingOrder,
   getKioskMenu,
   getOrderDetail,
+  listOrderSummaries,
   recordRefund,
   staffDirectSale,
   voidOrder
@@ -80,6 +81,31 @@ beforeEach(async () => {
   if (tdb) tdb.close();
   tdb = await createTestDatabase();
   bindExecutor(tdb.executor);
+});
+
+describe('订单列表摘要', () => {
+  it('使用订单快照，付款方式随实际收款更新，保留搜索与状态过滤', async () => {
+    const { eventId, categoryId, cashId } = await setupEvent();
+    const { productId, variantId } = await addItem(eventId, categoryId, { name: '春日来信', price: 1500 });
+    await activateEvent(eventId);
+    const { orderId } = await createPendingOrder({ eventId, lines: [{ variantId, quantity: 2 }], plannedPaymentMethodId: cashId });
+    await updateProduct(productId, { name: '改名后的商品' });
+    let rows = await listOrderSummaries({ eventId, keyword: '春日来信', status: 'pending_payment' });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].id).toBe(orderId);
+    expect(rows[0].item_summary).toBe('春日来信 ×2');
+    expect(rows[0].payment_method_name).toBe('现金');
+    expect(rows[0].total_minor).toBe(3000);
+    const other = (await listPaymentMethods()).find(method => method.id !== cashId)!;
+    await updatePaymentMethod(other.id, { enabled: true });
+    await setEventPaymentMethods(eventId, [cashId, other.id]);
+    await confirmPayment({ orderId, paymentMethodId: other.id });
+    rows = await listOrderSummaries({ eventId, status: 'completed', paymentMethodId: other.id });
+    expect(rows[0].payment_method_name).toBe(other.name);
+    expect(rows[0].item_summary).toBe('春日来信 ×2');
+    expect(await listOrderSummaries({ eventId, status: 'pending_payment' })).toEqual([]);
+    expect(await listOrderSummaries({ eventId, keyword: '不存在的商品' })).toEqual([]);
+  });
 });
 
 describe('金额（第 6 节）', () => {

@@ -22,7 +22,7 @@ import {
   updateVariant
 } from '../services/catalog';
 import { hashBytes, prepareProductImage, type PreparedAsset } from '../domain/image';
-import { minorToInput } from '../domain/money';
+import { minorToInput, parseAmountToMinor } from '../domain/money';
 import { errorMessage, useApp } from '../store';
 import AssetEditor from './AssetEditor';
 import BundleComponentPicker, { BundleComponentRow } from './BundleComponentPicker';
@@ -122,6 +122,8 @@ export function ProductEditorModal({
   const editorScrollTop = useRef(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const editorContent = useRef<HTMLDivElement>(null);
 
   // 类型决定库存怎么算 —— 套装成分只在这个类型下出现。
   // 注意别和「菜单分类」混了：分类里也有一个叫「套装」的默认分类，
@@ -195,9 +197,7 @@ export function ProductEditorModal({
 
   function parsePrice(): number | null {
     if (!form.default_price.trim()) return null;
-    const n = Number(form.default_price);
-    if (!Number.isFinite(n) || n < 0) throw new Error('默认价格必须为非负数');
-    return form.default_currency === 'CNY' ? Math.round(n * 100) : Math.round(n);
+    return parseAmountToMinor(form.default_price, form.default_currency);
   }
 
   async function onCover(file: File) {
@@ -224,6 +224,7 @@ export function ProductEditorModal({
   async function save() {
     setBusy(true);
     setError(null);
+    setFieldErrors({});
     try {
       // 成分自检放在最前面：写到一半被服务端拒掉，商品那部分已经落盘了，现场很难解释。
       if (isBundle && editing && compsTouched && !bundleComps.length) {
@@ -280,7 +281,16 @@ export function ProductEditorModal({
         onSaved({ productId: created.productId, variantId: created.variantId });
       }
     } catch (e) {
-      setError(errorMessage(e));
+      const message = errorMessage(e);
+      setError(message);
+      const key = /SKU/.test(message) ? 'sku' : /金额|价格|日元/.test(message) ? 'price' : /成分|套装/.test(message) ? 'components' : /名称/.test(message) ? 'name' : '';
+      if (key) {
+        setFieldErrors({ [key]: message });
+        requestAnimationFrame(() => {
+          const target = editorContent.current?.querySelector<HTMLElement>(key === 'components' ? '.bundle-comps input[aria-invalid="true"], [data-error-field="components"]' : `[data-error-field="${key}"]`);
+          target?.scrollIntoView({ block: 'center' }); target?.focus({ preventScroll: true });
+        });
+      }
     } finally {
       setBusy(false);
     }
@@ -292,6 +302,8 @@ export function ProductEditorModal({
   return (
     <Modal
       title={editing ? `编辑：${product!.name}` : '新增商品'}
+      className="product-editor-modal"
+      subheader={<nav className="editor-section-nav" aria-label="商品编辑分组">{[['product-basic', '基本信息'], ['product-art', '图片说明'], ['product-display', '分类展示'], ['product-variants', '规格 / SKU'], ...(isBundle ? [['product-components', '套装成分']] : [])].map(([id, label]) => <button type="button" key={id} onClick={() => document.getElementById(id)?.scrollIntoView({ block: 'start' })}>{label}</button>)}</nav>}
       onClose={onClose}
       actions={
         <>
@@ -305,22 +317,30 @@ export function ProductEditorModal({
         </>
       }
     >
-      <div className="col">
-        <div className="grid cols-2">
+      <div className="product-editor-content" ref={editorContent}>
+        <section className="editor-section" id="product-basic">
+          <h3>基本信息</h3>
+          <p className="tiny muted">名称用于菜单展示；默认价格可留空，在展会里单独设置本场售价。</p>
+          <div className="grid cols-2">
           <Field label="名称">
-            <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+            <input aria-required="true" data-error-field="name" aria-invalid={!!fieldErrors.name} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
           </Field>
-          <Field label="简称">
-            <input value={form.short_name} onChange={(e) => setForm({ ...form, short_name: e.target.value })} />
+          <Field label="默认价格">
+            <input
+              value={form.default_price}
+              data-error-field="price" aria-invalid={!!fieldErrors.price}
+              onChange={(e) => setForm({ ...form, default_price: e.target.value })}
+              placeholder={form.default_currency === 'CNY' ? '0.00' : '0'}
+            />
+            {fieldErrors.price ? <span className="field-error">{fieldErrors.price}</span> : null}
           </Field>
-          <Field label="菜单分类">
-            <select value={form.category_id} onChange={(e) => setForm({ ...form, category_id: e.target.value })}>
-              <option value="">未分类</option>
-              {categories.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
+          <Field label="币种">
+            <select
+              value={form.default_currency}
+              onChange={(e) => setForm({ ...form, default_currency: e.target.value as Currency })}
+            >
+              <option value="CNY">人民币 / CNY</option>
+              <option value="JPY">日元 / JPY</option>
             </select>
           </Field>
           <Field label="库存类型">
@@ -332,33 +352,8 @@ export function ProductEditorModal({
               ))}
             </select>
           </Field>
-          <Field label="原作 / 圈子">
-            <input value={form.fandom} onChange={(e) => setForm({ ...form, fandom: e.target.value })} />
-          </Field>
-          <Field label="标签（逗号分隔）">
-            <input value={form.tags} onChange={(e) => setForm({ ...form, tags: e.target.value })} />
-          </Field>
-          <Field label="默认价格">
-            <input
-              value={form.default_price}
-              onChange={(e) => setForm({ ...form, default_price: e.target.value })}
-              placeholder={form.default_currency === 'CNY' ? '0.00' : '0'}
-            />
-          </Field>
-          <Field label="币种">
-            <select
-              value={form.default_currency}
-              onChange={(e) => setForm({ ...form, default_currency: e.target.value as Currency })}
-            >
-              <option value="CNY">人民币 / CNY</option>
-              <option value="JPY">日元 / JPY</option>
-            </select>
-          </Field>
-        </div>
-
-        {/* 「菜单分类」和「库存类型」并排，而默认分类里正好有一个叫「套装」——
-            不写清楚的话，把分类选成「套装」是很自然的操作，然后就会发现
-            到处都找不到「套装包含哪些商品」在哪配。所以这里明说一句。 */}
+          </div>
+        {/* 分类不决定扣库方式，保留提示防止把「套装」分类当成组合套装。 */}
         <p className="tiny muted" style={{ marginTop: -4, marginBottom: 0 }}>
           「菜单分类」只决定它摆在游客菜单的哪一栏，不影响库存怎么算。
           「库存类型」{TYPE_LABEL[form.type]}：{TYPE_HINT[form.type]}
@@ -370,10 +365,9 @@ export function ProductEditorModal({
           </div>
         ) : null}
 
-        <Field label="说明（纯文本展示）">
-          <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
-        </Field>
-
+        </section>
+        <section className="editor-section" id="product-art">
+          <h3>图片与说明</h3>
         <AssetEditor
           label="封面图（自动压缩到最大边 1600px）"
           assetId={coverId}
@@ -381,12 +375,39 @@ export function ProductEditorModal({
           onPick={onCover}
         />
 
-        <div>
-          <h3>规格</h3>
+        <Field label="说明（纯文本展示）">
+          <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
+        </Field>
+
+        </section>
+        <section className="editor-section" id="product-display">
+          <h3>分类与展示</h3>
+          <div className="grid cols-2">
+          <Field label="菜单分类">
+            <select value={form.category_id} onChange={(e) => setForm({ ...form, category_id: e.target.value })}>
+              <option value="">未分类</option>
+              {categories.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="简称">
+            <input value={form.short_name} onChange={(e) => setForm({ ...form, short_name: e.target.value })} />
+          </Field>
+          <Field label="原作 / 圈子">
+            <input value={form.fandom} onChange={(e) => setForm({ ...form, fandom: e.target.value })} />
+          </Field>
+          <Field label="标签（逗号分隔）">
+            <input value={form.tags} onChange={(e) => setForm({ ...form, tags: e.target.value })} />
+          </Field>
+          </div>
+        </section>
+        <section className="editor-section" id="product-variants">
+          <h3>规格与 SKU</h3>
           {variants.map((v, i) => (
             <div key={v.id} className="row tight" style={{ marginTop: i ? 6 : 0 }}>
-              {/* 规格名是系统生成的，做成纯文本而不是只读输入框——
-                  只读输入框看起来仍然像个能改的字段，点进去发现改不动更让人困惑。 */}
               {/* 规格名可以改。留空会回退成「默认规格」（后端不允许空名）。
                   改名后会显示在游客菜单的副标题上 —— 见下面那行说明。 */}
               <input
@@ -400,6 +421,7 @@ export function ProductEditorModal({
               />
               <input
                 value={v.sku}
+                data-error-field="sku" aria-invalid={!!fieldErrors.sku}
                 placeholder="SKU（全库唯一，可留空）"
                 aria-label={`${v.name} 的 SKU`}
                 onChange={(e) =>
@@ -413,10 +435,10 @@ export function ProductEditorModal({
             一件商品只有一个规格。名字可以改（比如「上册」「带特典」），改名后会显示在游客菜单的副标题上；
             留空则回退成「默认规格」。SKU 用来和自己的表格对账，可以留空。
           </p>
-        </div>
+        </section>
 
         {isBundle ? (
-          <div className="bundle-comps">
+          <section className="bundle-comps editor-section" id="product-components" data-error-field="components" tabIndex={-1}>
             <h3>套装成分</h3>
             <p className="tiny muted">
               套装只消耗成分的库存，自身不持有库存。成分只能是普通库存商品。
@@ -446,7 +468,7 @@ export function ProductEditorModal({
             >
               {bundleComps.length ? '选择 / 添加商品' : '选择套装商品'}
             </button>
-          </div>
+          </section>
         ) : null}
 
         <ErrorBox message={error} />

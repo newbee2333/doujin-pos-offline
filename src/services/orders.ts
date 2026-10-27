@@ -935,6 +935,25 @@ export async function listOrders(filter: OrderFilter = {}): Promise<Order[]> {
   );
 }
 
+export interface OrderSummary extends Order {
+  item_summary: string;
+  payment_method_name: string;
+}
+
+/** Batch list presentation fields without recalculating historical prices. */
+export async function listOrderSummaries(filter: OrderFilter = {}): Promise<OrderSummary[]> {
+  const orders = await listOrders(filter);
+  if (!orders.length) return [];
+  const rows = await ex().read<{ id: string; item_summary: string | null; payment_method_name: string | null }>(
+    `SELECT o.id,
+      (SELECT GROUP_CONCAT(oi.product_name_snapshot || CASE WHEN oi.variant_name_snapshot <> '默认规格' THEN ' · ' || oi.variant_name_snapshot ELSE '' END || ' ×' || oi.quantity, '、') FROM order_items oi WHERE oi.order_id = o.id) AS item_summary,
+      COALESCE((SELECT p.method_name_snapshot FROM payments p WHERE p.order_id = o.id LIMIT 1), o.planned_method_name_snapshot) AS payment_method_name
+     FROM orders o WHERE o.id IN (${orders.map(() => '?').join(',')})`, orders.map(order => order.id)
+  );
+  const byId = new Map(rows.map(row => [row.id, row]));
+  return orders.map(order => ({ ...order, item_summary: byId.get(order.id)?.item_summary ?? '', payment_method_name: byId.get(order.id)?.payment_method_name ?? '未指定' }));
+}
+
 export interface OrderDetail {
   order: Order;
   items: (OrderItem & { components: { component_variant_id: string; quantity_total: number; component_name_snapshot: string }[] })[];

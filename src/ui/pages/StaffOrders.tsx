@@ -1,171 +1,60 @@
 import { useState } from 'react';
-import { correctOrder, getOrderDetail, listOrders, recordRefund } from '../../services/orders';
-import { getEvent } from '../../services/events';
-import { listPaymentMethods } from '../../services/events';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { correctOrder, getOrderDetail, listOrderSummaries, recordRefund } from '../../services/orders';
+import { getEvent, listPaymentMethods } from '../../services/events';
 import { formatMoney } from '../../domain/money';
 import { newId } from '../../domain/ids';
 import { errorMessage, useApp } from '../../store';
 import { ErrorBox, Field, Modal, Spinner, useAsync } from '../components';
+import { ORDER_STATUS_LABEL as STATUS_LABEL, orderStatusClass } from '../order-status';
 import type { Currency, Order } from '../../domain/types';
 
-const STATUS_LABEL: Record<string, string> = {
-  pending_payment: '待付款',
-  completed: '已完成',
-  voided: '已取消',
-  refunded: '已退款',
-  corrected: '已纠错'
-};
-
 export default function StaffOrdersPage() {
-  const eventId = useApp((s) => s.currentEventId);
+  const navigate = useNavigate();
+  const [params, setParams] = useSearchParams();
+  const eventId = useApp(s => s.currentEventId);
   const [status, setStatus] = useState('');
   const [keyword, setKeyword] = useState('');
   const [source, setSource] = useState('');
   const [methodId, setMethodId] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
-  const [detailId, setDetailId] = useState<string | null>(null);
-
-  const event = useAsync(() => (eventId ? getEvent(eventId) : Promise.resolve(null)), [eventId]);
+  const [detailId, setDetailId] = useState<string | null>(() => params.get('order'));
+  const event = useAsync(() => eventId ? getEvent(eventId) : Promise.resolve(null), [eventId]);
   const methods = useAsync(() => listPaymentMethods(), []);
-  const orders = useAsync(
-    () =>
-      eventId
-        ? listOrders({
-            eventId,
-            status: status || undefined,
-            source: (source || undefined) as 'kiosk' | 'staff' | undefined,
-            keyword: keyword || undefined,
-            paymentMethodId: methodId || undefined,
-            // 结束日期按当地含当天处理：+1 天
-            from: dateFrom ? new Date(`${dateFrom}T00:00:00`).toISOString() : undefined,
-            to: dateTo ? new Date(new Date(`${dateTo}T00:00:00`).getTime() + 86400000).toISOString() : undefined
-          })
-        : Promise.resolve([]),
-    [eventId, status, source, methodId, keyword, dateFrom, dateTo]
-  );
+  const orders = useAsync(() => eventId ? listOrderSummaries({ eventId, status: status || undefined,
+    source: (source || undefined) as 'kiosk' | 'staff' | undefined, keyword: keyword.trim() || undefined, paymentMethodId: methodId || undefined,
+    from: dateFrom ? new Date(`${dateFrom}T00:00:00`).toISOString() : undefined,
+    to: dateTo ? new Date(new Date(`${dateTo}T00:00:00`).getTime() + 86400000).toISOString() : undefined
+  }) : Promise.resolve([]), [eventId, status, source, methodId, keyword, dateFrom, dateTo]);
   const currency: Currency = event.data?.currency ?? 'CNY';
-
+  const filtered = !!(status || source || methodId || dateFrom || dateTo || keyword);
+  function clearFilters() { setStatus(''); setSource(''); setMethodId(''); setDateFrom(''); setDateTo(''); setKeyword(''); }
   if (!eventId) return <ErrorBox message="请先选择展会" />;
-
-  return (
-    <div className="page">
-      <h1>订单</h1>
-      <div className="card">
-        <div className="row">
-          <select value={status} onChange={(e) => setStatus(e.target.value)} style={{ maxWidth: 150 }}>
-            <option value="">全部状态</option>
-            {Object.entries(STATUS_LABEL).map(([k, v]) => (
-              <option key={k} value={k}>
-                {v}
-              </option>
-            ))}
-          </select>
-          <select value={source} onChange={(e) => setSource(e.target.value)} style={{ maxWidth: 130 }}>
-            <option value="">全部来源</option>
-            <option value="kiosk">游客自助</option>
-            <option value="staff">摊主</option>
-          </select>
-          <select value={methodId} onChange={(e) => setMethodId(e.target.value)} style={{ maxWidth: 160 }}>
-            <option value="">全部支付方式</option>
-            {methods.data?.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.name}
-              </option>
-            ))}
-          </select>
-          <input
-            type="date"
-            value={dateFrom}
-            onChange={(e) => setDateFrom(e.target.value)}
-            title="起始日期"
-            style={{ maxWidth: 160 }}
-          />
-          <span className="muted small">至</span>
-          <input
-            type="date"
-            value={dateTo}
-            onChange={(e) => setDateTo(e.target.value)}
-            title="结束日期（含当天）"
-            style={{ maxWidth: 160 }}
-          />
-          <input
-            type="search"
-            placeholder="订单号 / 商品名 / SKU"
-            value={keyword}
-            onChange={(e) => setKeyword(e.target.value)}
-            style={{ maxWidth: 240 }}
-          />
-          {status || source || methodId || dateFrom || dateTo || keyword ? (
-            <button
-              className="small ghost"
-              onClick={() => {
-                setStatus('');
-                setSource('');
-                setMethodId('');
-                setDateFrom('');
-                setDateTo('');
-                setKeyword('');
-              }}
-            >
-              清空筛选
-            </button>
-          ) : null}
-        </div>
-        <div className="small muted" style={{ marginTop: 6 }}>
-          共 {orders.data?.length ?? 0} 笔
-          {orders.data?.length === 200 ? '（仅显示最近 200 笔，请用筛选缩小范围）' : ''}
-        </div>
-
-        <div className="table-wrap" style={{ marginTop: 10 }}>
-          <table>
-            <thead>
-              <tr>
-                <th>订单号</th>
-                <th>时间</th>
-                <th>来源</th>
-                <th className="num">金额</th>
-                <th>状态</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {orders.data?.map((o) => (
-                <tr key={o.id}>
-                  <td className="strong">#{o.human_readable_number}</td>
-                  <td className="tiny">{new Date(o.created_at).toLocaleString('zh-CN')}</td>
-                  <td>{o.source === 'kiosk' ? '游客' : '摊主'}</td>
-                  <td className="num nowrap">{formatMoney(o.total_minor, currency)}</td>
-                  <td>
-                    <span
-                      className={`badge ${
-                        o.status === 'completed'
-                          ? 'ok'
-                          : o.status === 'pending_payment'
-                            ? 'warn'
-                            : o.status === 'voided'
-                              ? ''
-                              : 'danger'
-                      }`}
-                    >
-                      {STATUS_LABEL[o.status]}
-                    </span>
-                  </td>
-                  <td>
-                    <button className="small" onClick={() => setDetailId(o.id)}>
-                      详情
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+  return <div className="page orders-page">
+    <div className="page-head"><h1>订单</h1><span className="small muted">{event.data?.name}</span></div>
+    <div className="orders-toolbar">
+      <div className="order-status-filters" role="group" aria-label="订单状态">
+        {[['', '全部'], ...Object.entries(STATUS_LABEL)].map(([value, label]) => <button key={value} type="button" className={status === value ? 'primary' : ''} aria-pressed={status === value} onClick={() => setStatus(value)}>{label}</button>)}
       </div>
-
-      {detailId ? <OrderDetailModal orderId={detailId} onClose={() => setDetailId(null)} onChanged={orders.reload} /> : null}
+      <input type="search" aria-label="搜索订单" placeholder="取货号 / 商品名 / SKU" value={keyword} onChange={e => setKeyword(e.target.value)} />
+      <details className="order-advanced"><summary>更多筛选{source || methodId || dateFrom || dateTo ? ' · 已设置' : ''}</summary><div className="grid cols-2">
+        <Field label="订单来源"><select value={source} onChange={e => setSource(e.target.value)}><option value="">全部来源</option><option value="kiosk">游客自助</option><option value="staff">摊主</option></select></Field>
+        <Field label="支付方式"><select value={methodId} onChange={e => setMethodId(e.target.value)}><option value="">全部支付方式</option>{methods.data?.map(method => <option value={method.id} key={method.id}>{method.name}</option>)}</select></Field>
+        <Field label="起始日期（本机）"><input type="date" title="起始日期" value={dateFrom} onChange={e => setDateFrom(e.target.value)} /></Field>
+        <Field label="结束日期（含当天，本机）"><input type="date" title="结束日期（含当天）" value={dateTo} onChange={e => setDateTo(e.target.value)} /></Field>
+      </div></details>
     </div>
-  );
+    <div className="section-heading order-results-heading"><span className="small muted">{orders.loading ? '正在读取…' : `共 ${orders.data?.length ?? 0} 笔${filtered ? ' · 当前筛选' : ''}`}{orders.data?.length === 200 ? '（最近 200 笔，请筛选缩小范围）' : ''}</span>{filtered ? <button className="small ghost" onClick={clearFilters}>清空筛选</button> : null}</div>
+    {orders.error ? <ErrorBox message={orders.error} /> : orders.loading ? <Spinner label="读取订单…" /> : !orders.data?.length ? <div className="empty-panel"><h2>{filtered ? '没有匹配的订单' : '本场还没有订单'}</h2><p className="muted">{filtered ? '试试其他取货号、商品名或筛选条件。' : '完成收银或提交游客订单后，会显示在这里。'}</p><button onClick={filtered ? clearFilters : () => navigate('/staff/checkout')}>{filtered ? '清空筛选' : '去收银台'}</button></div> : <div className="order-list">
+      {orders.data.map(order => <article className="order-list-row" key={order.id} aria-label={`订单 #${order.human_readable_number}`}>
+        <div className="order-identity"><button className="order-number" onClick={() => setDetailId(order.id)}>#{order.human_readable_number}</button><span className={`badge ${orderStatusClass(order.status)}`}>{STATUS_LABEL[order.status]}</span></div>
+        <div className="order-list-content"><div className="order-items-summary">{order.item_summary || '查看商品明细'}</div><div className="small muted">{new Date(order.created_at).toLocaleString('zh-CN')} · {order.source === 'kiosk' ? '游客自助' : '摊主'} · {order.payment_method_name}</div></div>
+        <strong className="order-list-amount">{formatMoney(order.total_minor, currency)}</strong><button className="small order-open" onClick={() => setDetailId(order.id)}>详情</button>
+      </article>)}
+    </div>}
+    {detailId ? <OrderDetailModal orderId={detailId} onClose={() => { setDetailId(null); const next = new URLSearchParams(params); next.delete('order'); setParams(next, { replace: true }); }} onChanged={orders.reload} /> : null}
+  </div>;
 }
 
 function OrderDetailModal({
@@ -187,13 +76,9 @@ function OrderDetailModal({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  if (d.loading || !d.data) {
-    return (
-      <div className="center-page">
-        <Spinner label="读取订单…" />
-      </div>
-    );
-  }
+  if (d.loading || !d.data) return <Modal title="订单详情" onClose={onClose} actions={<button onClick={onClose}>关闭</button>}>
+    {d.error ? <ErrorBox message={d.error} /> : d.loading ? <Spinner label="读取订单…" /> : <p>未找到这笔订单。</p>}
+  </Modal>;
   const { order, items, payment, refund, correction } = d.data;
   const currency = order.currency;
 

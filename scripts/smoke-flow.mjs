@@ -176,7 +176,7 @@ try {
     fail('库存扣减', invText.slice(0, 300));
   }
 
-  // 收摊 → 首页应出现明显的「立即导出」提示
+  // 收摊 → 首页无提醒，备份与恢复页集中提示保存
   // ── 顾客路径：游客菜单 → 购物车 → 结算 → 提交订单 → 订单页正常渲染
   //    回归防线：KioskOrderPage 的 useEffect 曾放在提前 return 之后，
   //    游客提交订单后整树崩溃白屏；而当时 smoke-flow 只测摊主收款，漏掉了这条链路。
@@ -246,8 +246,11 @@ try {
 
   await gotoStaff('');
   const homeText = await page.evaluate(() => document.body.innerText);
-  if (homeText.includes('立即导出') && homeText.includes('只存在这台设备上')) ok('收摊后导出提示出现');
-  else fail('收摊后导出提示', homeText.slice(0, 200));
+  if (!homeText.includes('立即导出') && await page.locator('.backup-reminder').count() === 0) ok('首页不显示备份提醒');
+  else fail('首页备份提醒', homeText.slice(0, 200));
+  await gotoStaff('staff/backup');
+  if (await page.locator('.backup-reminder').count() === 1 && await page.getByRole('button', { name: '导出数据库', exact: true }).count()) ok('备份页集中提醒保存数据库');
+  else fail('备份页保存提醒', (await page.locator('body').innerText()).slice(0, 300));
 
   // 回到库存页再验证刷新（首页不列商品名）
   await gotoStaff('staff/inventory');

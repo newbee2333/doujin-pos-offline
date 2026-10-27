@@ -23,7 +23,8 @@ export default function SaveDatabase({
   eventName,
   label = '保存当前数据库',
   reloadKey,
-  onSaved
+  onSaved,
+  onExported
 }: {
   /** 用来拼导出文件名。没有就退回默认名。 */
   eventName?: string;
@@ -36,6 +37,7 @@ export default function SaveDatabase({
   reloadKey?: unknown;
   /** 确认保存之后回调：调用方据此刷新自己的备份状态、放行后面那个破坏性按钮。 */
   onSaved?: () => void;
+  onExported?: () => void;
 }) {
   const showToast = useApp((s) => s.showToast);
   const [busy, setBusy] = useState(false);
@@ -55,6 +57,7 @@ export default function SaveDatabase({
       showToast(mode === 'picker' ? '已保存到你选择的位置' : '已发起下载，请到「文件」里确认');
       // 「最近生成导出」那一行要跟着动，否则用户会以为没导出来
       state.reload();
+      onExported?.();
     } catch (e) {
       setError(errorMessage(e));
     } finally {

@@ -80,18 +80,12 @@ for (const t of ['--row-h', '--radius-card', '--radius-ctl']) {
 check('.pos-grid 用 auto-fill + minmax(140px)', /\.pos-grid \{[\s\S]*?grid-template-columns: repeat\(auto-fill, minmax\(140px, 1fr\)\)/.test(stripped));
 // 两栏块（收银台 / 待付款）的高度来源。
 // 当前是 calc 预算 —— 这仍然是**有缺陷**的写法：它按「上方留白 250px」
-// 硬估，而不是由布局算出来。2026-09-17 起备份提醒条那 74px 由
-// .content:has(> .backup-nudge) 单独补了一条预算，溢出 19px 的现场症状没了，
-// 但根因（定高估算）还在：改动上方任何一块留白，都要记得同步这几个数字。
+// 硬估，而不是由布局算出来。备份提醒已移到备份页；仍需留意其他上方留白。
 // 所以这条断言的是「现状」，不是「理想」；哪天改成 flex / 定高方案时它会失败，
 // 提醒你把 styles.css 里那份说明一起更新。
 const block = stripped.match(/\.cols-side\.pos-layout,\r?\n\.cols-side\.queue-layout \{[^}]*\}/);
 const blockText = block ? block[0].replace(/\s+/g, ' ') : '';
 check('两栏块高度 = var(--panel-h)（calc 预算，根因未除）', /height: var\(--panel-h\)/.test(blockText), blockText.slice(0, 60));
-check(
-  '备份提醒条存在时另有高度预算（:has(> .backup-nudge)）',
-  /:has\(> \.backup-nudge\) \.cols-side\.pos-layout/.test(stripped)
-);
 check('.content 的 overflow-x 是 clip（改回 hidden 会让所有 sticky 失效）', /\.content \{[\s\S]*?overflow-x: clip/.test(stripped));
 
 const bad = results.filter((x) => !x).length;

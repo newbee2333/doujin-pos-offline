@@ -79,3 +79,15 @@ jobs:
           node scripts/smoke-flow.mjs
           node scripts/verify-import.mjs
           node scripts/verify-kiosk-entry.mjs
+
+      - name: 暖纸与营业页面回归
+        env:
+          SMOKE_BASE: http://127.0.0.1:5201/
+          SMOKE_CHANNEL: chromium
+        run: |
+          npx vite --host 127.0.0.1 --port 5201 --strictPort > /tmp/warm-vite.log 2>&1 &
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:5201/ > /dev/null; then break; fi
+            sleep 1
+          done
+          node scripts/verify-warm-workspace.mjs

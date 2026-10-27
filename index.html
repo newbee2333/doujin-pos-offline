@@ -7,15 +7,16 @@
       content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" data-page-node-id="pEGdZ8RVe0av2AVgI42jgS"
     />
     <meta name="theme-color" content="#ffffff" data-page-node-id="5VL81C55xV1wP2xWxNlmBR" />
-    <style>html{background:#fff;color-scheme:light}html[data-theme="dark"]{background:#14161c;color-scheme:dark}</style>
+    <style>html{background:#fff;color-scheme:light}html[data-theme="warm"]{background:#f7f3ec}html[data-theme="dark"]{background:#14161c;color-scheme:dark}</style>
     <script>
       // Apply before the app bundle/CSS loads, including offline startup.
       (() => {
         let preference = 'system';
-        try { preference = localStorage.getItem('doujin-pos:theme') || 'system'; } catch {}
+        let warm = false;
+        try { preference = localStorage.getItem('doujin-pos:theme') || 'system'; warm = localStorage.getItem('doujin-pos:light-theme') === 'warm'; } catch {}
         const dark = preference === 'dark' || (preference !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
-        document.documentElement.dataset.theme = dark ? 'dark' : 'light';
-        document.querySelector('meta[name="theme-color"]').content = dark ? '#1b1e26' : '#ffffff';
+        document.documentElement.dataset.theme = dark ? 'dark' : warm ? 'warm' : 'light';
+        document.querySelector('meta[name="theme-color"]').content = dark ? '#1b1e26' : warm ? '#fffdf8' : '#ffffff';
       })();
     </script>
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />

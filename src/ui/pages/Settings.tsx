@@ -23,7 +23,7 @@ export default function SettingsPage() {
   const [layoutBusy, setLayoutBusy] = useState(false);
   const [layoutError, setLayoutError] = useState<string | null>(null);
   const layout = useAsync(getLandscapeCartEnabled, []);
-  const { preference, setPreference, storageError } = useTheme();
+  const { preference, setPreference, lightPalette, setLightPalette, storageError } = useTheme();
 
   const pinSet = useAsync(() => isPinSet(), []);
   const persisted = useAsync(() => requestPersistence(), []);
@@ -44,6 +44,15 @@ export default function SettingsPage() {
             </label>
           ))}
         </div>
+        <h3 className="palette-heading">浅色配色</h3>
+        <div className="theme-options light-theme-options" role="radiogroup" aria-label="浅色配色">
+          {(['default', 'warm'] as const).map(palette => <label className={`theme-choice${lightPalette === palette ? ' selected' : ''}`} key={palette}>
+            <input type="radio" name="light-palette" checked={lightPalette === palette} onChange={() => setLightPalette(palette)} />
+            <span className={`palette-swatch ${palette}`} aria-hidden="true" />
+            <span><strong>{palette === 'warm' ? '暖纸' : '清爽白'}</strong><span className="tiny muted">{palette === 'warm' ? '暖白纸面 · 柔和描边' : '原有浅色配色'}</span></span>
+          </label>)}
+        </div>
+        <p className="tiny muted">浅色配色也用于跟随系统时的日间界面，深色模式保持夜间配色。</p>
         <p className="small muted">默认跟随系统，游客菜单与后台同步切换。选择只保存在这台设备的浏览器中，不随数据库备份迁移。</p>
         {storageError ? <p className="notice" role="status">当前浏览器无法保存本次外观选择；当前窗口已生效，重新打开后可能恢复原设置。</p> : null}
       </div>
@@ -86,7 +95,7 @@ export default function SettingsPage() {
             <p className="tiny muted" style={{ margin: 0 }}>
               忘记后台密码没有自助找回的办法：一旦忘了就进不去后台，只能清空本站数据重来
               （商品和订单会一起没掉）。所以请先用上面的按钮把它改成一个你记得住的数字，
-              并把导出备份养成习惯。
+              数据保存与恢复操作集中在「备份与恢复」。
             </p>
           </div>
         ) : (
@@ -138,7 +147,7 @@ export default function SettingsPage() {
             {persisted.data?.quotaBytes != null ? formatBytes(persisted.data.quotaBytes) : '—'}
           </dd>
           <dt>受限营业</dt>
-          <dd>{limited ? '是（请频繁导出备份）' : '否'}</dd>
+          <dd>{limited ? '是' : '否'}</dd>
         </dl>
         <details>
           <summary>查看技术详情</summary>
@@ -157,7 +166,7 @@ export default function SettingsPage() {
         ) : null}
         </details>
         <p className="tiny muted" style={{ marginBottom: 0 }}>
-          持久化获批不等于数据绝不丢失，它不能代替设备外的备份文件。
+          持久化状态由当前浏览器决定。
         </p>
       </div>
 
