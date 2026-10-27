@@ -2134,9 +2134,7 @@ html.standalone-safe-frame {
 .side-cart-item-actions .qty .value { min-width: 28px; font-size: var(--fs-small); }
 .side-cart-line-total { display: flex; flex-direction: column; max-width: 100%; overflow-wrap: anywhere; font-size: var(--fs-body); line-height: 1.3; font-variant-numeric: tabular-nums; }
 .side-cart-line-total small { font-size: var(--fs-caption); font-weight: 500; color: var(--ink-3); letter-spacing: .04em; }
-.side-cart-footer { flex: none; margin: 0 12px max(12px, env(safe-area-inset-bottom, 0px)); padding: 16px; border-radius: var(--r-lg); background: var(--inverse); color: var(--inverse-ink); box-shadow: 0 4px 12px rgb(15 23 42 / 12%); }
+.side-cart-footer { flex: none; padding: 16px; padding-bottom: max(16px, env(safe-area-inset-bottom, 0px)); border-top: 1px solid var(--line); background: var(--surface); }
 .side-cart-total { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 8px; }
-.side-cart-total > span { font-size: var(--fs-small); }
-.side-cart-total strong { font-size: var(--fs-title); line-height: 1.3; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
-.side-cart-footer .muted { color: var(--line-strong); margin: 8px 0 12px; }
-.side-cart-footer .primary { min-height: 48px; font-size: var(--fs-body); font-weight: 600; }
+.side-cart-total strong { font-size: var(--fs-lead); color: var(--accent); overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.side-cart-footer .primary { min-height: 48px; }
