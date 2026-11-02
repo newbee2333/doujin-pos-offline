@@ -8,6 +8,8 @@ import { verifyPin } from '../../services/system';
 import { errorMessage, useApp } from '../../store';
 import { ErrorBox, PinPad, Spinner, useAsync } from '../components';
 import { QrPreview } from './KioskCheckout';
+import { acknowledgeOrderPrice } from '../../services/order-pricing';
+import { PriceSummary } from '../Pricing';
 
 export default function KioskOrderPage() {
   const { id = '' } = useParams();
@@ -27,6 +29,7 @@ export default function KioskOrderPage() {
   const [tendered, setTendered] = useState('');
 
   const detail = useAsync(() => getOrderDetail(id), [id]);
+  useEffect(() => { const timer = window.setInterval(detail.reload, 1500); return () => window.clearInterval(timer); }, [id]);
   const eventId = detail.data?.order.event_id;
   const methods = useAsync(
     () => (eventId ? getEventPaymentMethods(eventId) : Promise.resolve([])),
@@ -58,7 +61,7 @@ export default function KioskOrderPage() {
     }
   }, [methodId, order, cashMethod, tendered]);
 
-  if (detail.loading) {
+  if (detail.loading && !order) {
     return (
       <div className="center-page">
         <Spinner label="读取订单…" />
@@ -69,7 +72,9 @@ export default function KioskOrderPage() {
 
   const currency = order.currency;
   /** 有没有「收款码」那一块。零元单和已完成的单没有，此时不该摆两栏（右边会被推到一边）。 */
-  const showQr = order.status === 'pending_payment' && order.total_minor > 0;
+  const needsAcknowledgement = (order.customer_ack_version ?? 0) !== (order.pricing_version ?? 0);
+  const priceBlocked = !!order.pricing_editing || needsAcknowledgement;
+  const showQr = order.status === 'pending_payment' && order.total_minor > 0 && !priceBlocked;
 
   async function doConfirm() {
     setBusy(true);
@@ -79,7 +84,8 @@ export default function KioskOrderPage() {
       await confirmPayment({
         orderId: order!.id,
         paymentMethodId: methodId || null,
-        tenderedMinor: m?.type === 'cash' ? Math.round(Number(tendered) * 100) : null,
+        tenderedMinor: m?.type === 'cash' ? parseAmountToMinor(tendered, order!.currency) : null,
+        expectedPricingVersion: order!.pricing_version ?? 0,
         operationId: newId()
       });
       showToast('已确认收款');
@@ -122,6 +128,11 @@ export default function KioskOrderPage() {
       </div>
 
       <div className={`content narrow kiosk-order-page${showQr ? ' has-qr' : ''}`}>
+        {order.status === 'pending_payment' && priceBlocked && <div className="card ord-price-warning" role="alert">
+          <h2>{order.pricing_editing ? '摊主正在调整金额，请暂时不要付款' : '金额已调整，请重新核对'}</h2>
+          <p>请向摊主确认新的应收金额。已经付款的，请出示实际付款记录。</p>
+          {!order.pricing_editing && <button className="primary" disabled={busy} onClick={async () => { setBusy(true); try { await acknowledgeOrderPrice(order.id, order.pricing_version ?? 0, 'kiosk'); setTendered(''); detail.reload(); } catch (e) { setError(errorMessage(e)); } finally { setBusy(false); } }}>已核对 {formatMoney(order.total_minor, currency)}，继续付款</button>}
+        </div>}
         <div className="card center ord-no">
           <div className="small muted">取货号</div>
           <div className="order-no">#{order.human_readable_number}</div>
@@ -130,7 +141,7 @@ export default function KioskOrderPage() {
           </div>
           <div className="small muted" style={{ marginTop: 4 }}>
             {order.status === 'pending_payment'
-              ? '请按上方金额付款，并出示给摊主核对'
+              ? priceBlocked ? '请先与摊主核对金额，暂时不要付款' : '请按上方金额付款，并出示给摊主核对'
               : order.status === 'completed'
                 ? '摊主已确认收款，感谢惠顾'
                 : order.status === 'voided'
@@ -161,9 +172,10 @@ export default function KioskOrderPage() {
                   {it.variant_name_snapshot} · {formatMoney(it.unit_price_minor, currency)} × {it.quantity}
                 </div>
               </div>
-              <div className="nowrap">{formatMoney(it.subtotal_minor, currency)}</div>
+              <div className="nowrap">{formatMoney(it.net_minor ?? it.subtotal_minor, currency)}</div>
             </div>
           ))}
+          <PriceSummary quote={order.pricing_json ? JSON.parse(order.pricing_json) : null} currency={currency}/>
         </div>
 
         <div className="ord-err">
@@ -233,7 +245,7 @@ export default function KioskOrderPage() {
               ) : null}
 
               <div className="row" style={{ marginTop: 12 }}>
-                <button className="primary" onClick={doConfirm} disabled={busy}>
+                <button className="primary" onClick={doConfirm} disabled={busy || priceBlocked}>
                   {busy ? <span className="spinner" /> : null}
                   {order.total_minor > 0 ? '确认已收款' : '确认发放'}
                 </button>

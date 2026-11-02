@@ -9,6 +9,7 @@ import { ErrorBox, Spinner, useAsync } from '../components';
 import MenuCard from '../MenuCard';
 import MenuOrder from '../MenuOrder';
 import KioskSideCart from '../KioskSideCart';
+import { PromotionHint, useCartQuote } from '../Pricing';
 
 const FRAMES = [
   { key: 'ipad-landscape', label: '平板横屏 1180×820', width: 1180, height: 820 },
@@ -35,6 +36,7 @@ export default function PreviewPage() {
   const menu = useAsync(() => (eventId ? getKioskMenu(eventId) : Promise.resolve([])), [eventId]);
   const cats = useAsync(() => listCategories(false), []);
   const layout = useAsync(getLandscapeCartEnabled, []);
+  const quote = useCartQuote(eventId, previewCart);
   const frame = FRAMES[frameIdx];
   const cartCount = previewCart.reduce((sum, item) => sum + item.quantity, 0);
   const currency = menu.data?.[0]?.currency ?? 'CNY';
@@ -132,6 +134,7 @@ export default function PreviewPage() {
             </button>
           ))}
         </div>
+        <PromotionHint rules={quote.data?.rules} currency={currency}/>
         <div className="kiosk-menu-body">
         <div className="menu-grid">
             {filtered.map((item) => (
@@ -146,7 +149,7 @@ export default function PreviewPage() {
             ))}
             {!filtered.length ? <p className="muted">没有找到商品。</p> : null}
         </div>
-        <KioskSideCart cart={previewCart} currency={currency} preview onSetQty={(id, qty) => {
+        <KioskSideCart cart={previewCart} currency={currency} quote={quote.data} preview onSetQty={(id, qty) => {
           const item = menu.data?.find(item => item.variant_id === id);
           if (item) setPreviewQty(item, qty);
         }} onClear={() => setPreviewCart([])} onCheckout={() => {}} />

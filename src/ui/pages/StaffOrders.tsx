@@ -8,6 +8,7 @@ import { errorMessage, useApp } from '../../store';
 import { ErrorBox, Field, Modal, Spinner, useAsync } from '../components';
 import { ORDER_STATUS_LABEL as STATUS_LABEL, orderStatusClass } from '../order-status';
 import type { Currency, Order } from '../../domain/types';
+import { PriceSummary } from '../Pricing';
 
 export default function StaffOrdersPage() {
   const navigate = useNavigate();
@@ -134,11 +135,12 @@ function OrderDetailModal({
                   {formatMoney(it.unit_price_minor, currency)} × {it.quantity}
                 </div>
               </div>
-              <div className="nowrap">{formatMoney(it.subtotal_minor, currency)}</div>
+              <div className="nowrap">{formatMoney(it.net_minor ?? it.subtotal_minor, currency)}</div>
             </div>
           ))}
         </div>
 
+        <PriceSummary quote={order.pricing_json ? JSON.parse(order.pricing_json) : null} currency={currency}/>
         {payment ? (
           <div className="small">
             收款：{payment.method_name_snapshot} · {formatMoney(payment.amount_minor, currency)}

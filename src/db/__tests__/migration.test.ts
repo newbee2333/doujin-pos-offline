@@ -12,11 +12,14 @@ import { buildMigrationSteps } from '../bootstrap';
 import { createTestDatabase, openFromBytes, type TestDatabase } from '../test-executor';
 import { bindExecutor } from '../../services/context';
 import { listPaymentMethods, updatePaymentMethod } from '../../services/events';
+import { SCHEMA_VERSION } from '../schema';
 
 /** 把一个 v2 测试库退化成 v1：删掉新列、版本号写回 1，导出字节。 */
 async function makeV1Bytes(): Promise<Uint8Array> {
   const db: TestDatabase = await createTestDatabase();
   await db.executor.tx([
+    ...['pricing_json','pricing_version','customer_ack_version','pricing_editing'].map(name => ({ t: 'run' as const, sql: `ALTER TABLE orders DROP COLUMN ${name}` })),
+    ...['pricing_json','net_minor'].map(name => ({ t: 'run' as const, sql: `ALTER TABLE order_items DROP COLUMN ${name}` })),
     { t: 'run', sql: 'ALTER TABLE payment_methods DROP COLUMN confirm_requires_pin' },
     { t: 'run', sql: "UPDATE metadata SET value = '1' WHERE key = 'schema_version'" }
   ]);
@@ -51,10 +54,10 @@ describe('schema 迁移 v1 → v2', () => {
     const meta = await migrated.executor.read<{ value: string }>(
       "SELECT value FROM metadata WHERE key = 'schema_version'"
     );
-    expect(meta[0]?.value).toBe('2');
+    expect(meta[0]?.value).toBe(String(SCHEMA_VERSION));
 
     // 再跑一次迁移不应报错（buildMigrationSteps(2) 找不到可用的迁移，产出空步骤）
-    expect(buildMigrationSteps(2)).toEqual([]);
+    expect(buildMigrationSteps(SCHEMA_VERSION)).toEqual([]);
     migrated.close();
   });
 

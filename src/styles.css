@@ -2301,3 +2301,33 @@ input:disabled, select:disabled, textarea:disabled { color: var(--ink-3); opacit
   .report-secondary { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; padding: 18px; }
   .light-theme-options { grid-template-columns: 1fr; }
 }
+
+/* Promotions share the existing theme tokens and touch targets. */
+.price-summary { display: grid; gap: 6px; margin-block: 12px; font-size: var(--fs-small); color: var(--ink-2); }
+.price-summary > div { display: flex; justify-content: space-between; gap: 12px; }
+.price-summary .strong { color: var(--accent); }
+.price-summary.compact { margin-block: 0 4px; font-size: var(--fs-caption); }
+.promotion-hint { margin: 0; padding: 8px 16px; color: var(--accent); background: var(--accent-soft); flex: none; line-height: 1.6; }
+.list-price { display: block; color: var(--ink-3); font-size: var(--fs-caption); font-weight: 400; }
+.promotion-settings { margin-block: var(--sp-3); }
+.promotion-settings > summary { cursor: pointer; min-height: 32px; align-content: center; }
+.promotion-form { padding: 0; margin: 0; border: 0; min-width: 0; display: grid; gap: 14px; }
+.promotion-form .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.promotion-form > .row > input, .promotion-form > .row > select { flex: 1 1 180px; width: auto; min-width: 0; }
+.promotion-products { max-height: 300px; overflow: auto; border: 1px solid var(--line); border-radius: var(--r-sm); }
+.promotion-product { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+.promotion-product:last-child { border-bottom: 0; }
+.promotion-product .check { flex: 1 1 250px; }
+.pricing-dialog { width: min(760px, 96vw); }
+.pricing-dialog .modal-content { display: grid; gap: 16px; }
+.pricing-dialog fieldset { border: 1px solid var(--line); border-radius: var(--r-sm); padding: 12px; min-width: 0; display: grid; gap: 12px; }
+.pricing-dialog legend { padding-inline: 6px; font-weight: 600; }
+.pricing-dialog label { display: grid; gap: 6px; font-size: var(--fs-small); min-width: 0; }
+.pricing-lines { display: grid; gap: 10px; max-height: 200px; overflow-y: auto; }
+.pricing-line { display: flex; gap: 12px; align-items: center; justify-content: space-between; padding-block: 8px; border-bottom: 1px solid var(--line); }
+.pricing-line > div { min-width: 0; overflow-wrap: anywhere; }
+.pricing-line button { flex: none; }
+.pricing-inputs { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; }
+.pricing-inputs > label, .pricing-inputs > input, .pricing-inputs > select { flex: 1 1 140px; min-width: 0; width: auto; }
+.pricing-dialog input, .pricing-dialog select { width: 100%; }
+.ord-price-warning { grid-column: 1 / -1; border-color: var(--accent); }

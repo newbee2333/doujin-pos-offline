@@ -147,8 +147,12 @@ export function layoutOverview(sheet: Worksheet, table: ReportTable, data: Repor
   const end = 26 + Math.max(1, products.length);
   if (!products.length) note(26, '本场暂无销售记录');
   note(end, '按原销售额排序，含已退款原销售，不扣退货；全部商品见「商品销售」。');
-  note(end + 1, '收款、订单及库存请查看对应工作表。完整备份使用 SQLite。');
-  sheetSettings(sheet, 'F', end + 1);
+  section(end + 1, '优惠情况（不计为退款）');
+  metric(end + 2, 1, '本场原价金额', '本场原价金额', true);
+  metric(end + 2, 4, '优惠合计', '优惠合计', true);
+  note(end + 3, '本场原价金额－优惠合计＝销售额。含已退款订单原销售；优惠不是退款，原价金额不是实收。');
+  note(end + 4, '收款、订单及库存请查看对应工作表。完整备份使用数据库导出。');
+  sheetSettings(sheet, 'F', end + 4);
 }
 
 export function layoutDetailSheet(sheet: Worksheet, table: ReportTable, data: ReportData) {

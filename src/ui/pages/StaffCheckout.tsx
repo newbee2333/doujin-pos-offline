@@ -7,12 +7,18 @@ import { newId } from '../../domain/ids';
 import { errorMessage, useApp } from '../../store';
 import { AssetImage, ErrorBox, QtyStepper, Spinner, useAsync } from '../components';
 import type { Currency } from '../../domain/types';
+import type { OrderAdjustment, PriceAdjustment } from '../../domain/pricing';
+import { automaticUnit } from '../../domain/pricing';
+import { authorizeAdjustment } from '../../services/promotions';
+import { AdjustmentEditor, PriceSummary, PromotionHint, useCartQuote } from '../Pricing';
 
 interface PickedLine {
+  lineId: string;
   variantId: string;
   name: string;
   priceMinor: number;
   quantity: number;
+  manual?: PriceAdjustment;
 }
 
 function SearchIcon() {
@@ -38,6 +44,11 @@ export default function StaffCheckoutPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastOrder, setLastOrder] = useState<{ number: number; change: number } | null>(null);
+  const [adjusting, setAdjusting] = useState(false);
+  const [manual, setManual] = useState<OrderAdjustment>();
+  const [adjustmentReason, setAdjustmentReason] = useState('');
+  const [adjustmentPin, setAdjustmentPin] = useState('');
+  const quote = useCartQuote(eventId, lines, manual);
 
   const event = useAsync(() => (eventId ? getEvent(eventId) : Promise.resolve(null)), [eventId]);
   const configs = useAsync(
@@ -102,7 +113,7 @@ export default function StaffCheckoutPage() {
     );
   }, [configs.data, keyword, categoryFilter, productCategory]);
 
-  const totalMinor = lines.reduce((a, l) => a + l.priceMinor * l.quantity, 0);
+  const totalMinor = quote.data?.total ?? 0;
   const totalUnits = lines.reduce((a, l) => a + l.quantity, 0);
   const cashMethod = methods.data?.find((m) => m.id === methodId);
   const categories = catsList.data ?? [];
@@ -121,24 +132,26 @@ export default function StaffCheckoutPage() {
   }, [cashMethod, totalMinor, currency, tendered, tenderedAuto]);
 
   function addLine(c: { variant_id: string; product_name: string; variant_name: string; event_price_minor: number | null; product_type: string }) {
+    setManual(undefined);
     const price = c.product_type === 'gift' ? 0 : Number(c.event_price_minor ?? 0);
     setLines((prev) => {
-      const idx = prev.findIndex((l) => l.variantId === c.variant_id);
+      const idx = prev.findIndex((l) => l.variantId === c.variant_id && !l.manual);
       if (idx >= 0) {
         const next = [...prev];
         next[idx] = { ...next[idx], quantity: next[idx].quantity + 1 };
         return next;
       }
-      return [...prev, { variantId: c.variant_id, name: `${c.product_name}（${c.variant_name}）`, priceMinor: price, quantity: 1 }];
+      return [...prev, { lineId: newId(), variantId: c.variant_id, name: `${c.product_name}（${c.variant_name}）`, priceMinor: price, quantity: 1 }];
     });
   }
 
-  function setLineQty(variantId: string, quantity: number) {
+  function setLineQty(lineId: string, quantity: number) {
+    setManual(undefined);
     if (quantity <= 0) {
-      setLines((prev) => prev.filter((l) => l.variantId !== variantId));
+      setLines((prev) => prev.filter((l) => l.lineId !== lineId));
       return;
     }
-    setLines((prev) => prev.map((l) => (l.variantId === variantId ? { ...l, quantity } : l)));
+    setLines((prev) => prev.map((l) => (l.lineId === lineId ? { ...l, quantity } : l)));
   }
 
   async function submit() {
@@ -148,7 +161,10 @@ export default function StaffCheckoutPage() {
       const tenderedMinor = cashMethod?.type === 'cash' ? parseAmountToMinor(tendered || '0', currency) : null;
       const { orderId } = await staffDirectSale({
         eventId: eventId!,
-        lines: lines.map((l) => ({ variantId: l.variantId, quantity: l.quantity })),
+        lines: lines.map((l) => ({ lineId: l.lineId, variantId: l.variantId, quantity: l.quantity, manual: l.manual })),
+        manual, adjustmentReason, adjustmentPin,
+        expectedTotalMinor: quote.data!.total,
+        expectedPromotionVersion: quote.data!.rules.version,
         paymentMethodId: methodId,
         tenderedMinor,
         note: note.trim() || null,
@@ -160,6 +176,7 @@ export default function StaffCheckoutPage() {
         change: rows?.payment?.change_minor ?? 0
       });
       setLines([]);
+      setManual(undefined); setAdjustmentPin(''); setAdjustmentReason('');
       setTendered('');
       setTenderedAuto(true);
       setNote('');
@@ -167,6 +184,7 @@ export default function StaffCheckoutPage() {
       configs.reload();
     } catch (e) {
       setError(errorMessage(e));
+      quote.reload();
     } finally {
       setBusy(false);
     }
@@ -196,6 +214,11 @@ export default function StaffCheckoutPage() {
 
   return (
     <div className="page page-cols">
+      {adjusting && quote.data && <AdjustmentEditor initialLines={quote.data.lines.map(l => ({ ...l, name: lines.find(v => v.lineId === l.lineId)!.name }))} initialManual={manual} rules={quote.data.rules} currency={currency} onClose={() => setAdjusting(false)} onSave={async (next, orderManual, reason, pin) => {
+        await authorizeAdjustment(pin);
+        setLines(next.map(l => ({ lineId: l.lineId, variantId: l.variantId, name: l.name, priceMinor: l.autoUnit, quantity: l.quantity, manual: l.manual })));
+        setManual(orderManual); setAdjustmentReason(reason); setAdjustmentPin(pin); setAdjusting(false);
+      }}/>}
       <div className="page-head">
         <h1>摊主收银</h1>
         {event.data ? (
@@ -231,6 +254,7 @@ export default function StaffCheckoutPage() {
             <span className="small muted nowrap">共 {filtered.length} 项</span>
           </div>
 
+          <PromotionHint rules={quote.data?.rules} currency={currency}/>
           <div className="chip-row pos-chips">
             <button
               type="button"
@@ -254,8 +278,9 @@ export default function StaffCheckoutPage() {
 
           <div className="pos-grid">
             {filtered.map((c) => {
-              const inCart = lines.find((l) => l.variantId === c.variant_id)?.quantity ?? 0;
-              const price = c.product_type === 'gift' ? 0 : Number(c.event_price_minor ?? 0);
+              const inCart = lines.filter((l) => l.variantId === c.variant_id).reduce((s, l) => s + l.quantity, 0);
+              const base = c.product_type === 'gift' ? 0 : Number(c.event_price_minor ?? 0);
+              const price = automaticUnit(base, quote.data?.rules.prices[c.variant_id]);
               // 套装的可用数来自成分，而它是后一步才算出来的。
               // 还没算出来时不能兜底成 0 —— 那正是「套装全显示售罄」的成因。
               const isBundle = c.product_type === 'bundle';
@@ -325,39 +350,42 @@ export default function StaffCheckoutPage() {
             <span className="strong">本次订单</span>
             <span className="badge">{totalUnits} 件</span>
             <span className="spacer" />
+            <button className="small" aria-label="人工优惠 / 调整应收" disabled={busy || !lines.length || !quote.data} onClick={() => setAdjusting(true)}>人工优惠</button>
             {lines.length ? (
-              <button type="button" className="small ghost" onClick={() => setLines([])} disabled={busy}>
+              <button type="button" className="small ghost" onClick={() => { setLines([]); setManual(undefined); setAdjustmentPin(''); }} disabled={busy}>
                 清空
               </button>
             ) : null}
           </div>
 
           <div className="side-panel-body">
+            {(manual || lines.some(l => l.manual)) && <button className="small ghost" disabled={busy} onClick={() => { setManual(undefined); setLines(lines.map(l => ({ ...l, manual: undefined }))); setAdjustmentPin(''); setAdjustmentReason(''); }}>恢复本单自动优惠</button>}
             {!lines.length ? (
               <p className="muted small" style={{ margin: 0 }}>
                 还没有加入商品。点左边的封面或「+」加入本单。
               </p>
             ) : (
-              lines.map((l) => (
-                <div key={l.variantId} className="pos-line">
+              lines.map((l, index) => (
+                <div key={l.lineId} className="pos-line">
                   <div className="pos-line-main">
                     <div className="pos-line-name">{l.name}</div>
                     <div className="pos-line-sub">
-                      × {l.quantity} · {formatMoney(l.priceMinor, currency)}
+                      × {l.quantity} · {formatMoney(quote.data?.lines[index]?.unit ?? l.priceMinor, currency)}{l.manual ? ' · 人工优惠' : ''}
                     </div>
                     <QtyStepper
                       value={l.quantity}
                       min={0}
-                      onChange={(v) => setLineQty(l.variantId, v)}
+                      onChange={(v) => setLineQty(l.lineId, v)}
                     />
                   </div>
-                  <div className="pos-line-amt">{formatMoney(l.priceMinor * l.quantity, currency)}</div>
+                  <div className="pos-line-amt">{formatMoney(quote.data?.lines[index]?.net ?? l.priceMinor * l.quantity, currency)}</div>
                 </div>
               ))
             )}
           </div>
 
           <div className="side-panel-foot">
+            <PriceSummary quote={quote.data} currency={currency} compact/>
             <div className="row">
               <span className="strong">合计</span>
               <span className="spacer" />
@@ -425,12 +453,12 @@ export default function StaffCheckoutPage() {
               />
             </div>
 
-            <ErrorBox message={error} />
+            <ErrorBox message={error ?? quote.error} />
 
             <button
               className="primary block"
               style={{ minHeight: 52 }}
-              disabled={busy || !lines.length || !methodId || !eventActive}
+              disabled={busy || !lines.length || !quote.data || quote.loading || (totalMinor > 0 && !methodId) || !eventActive}
               onClick={submit}
             >
               {busy ? <span className="spinner" /> : null}

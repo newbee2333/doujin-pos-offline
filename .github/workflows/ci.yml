@@ -84,6 +84,7 @@ jobs:
         env:
           SMOKE_BASE: http://127.0.0.1:5201/
           SMOKE_CHANNEL: chromium
+          PROMOTION_PRODUCTION_BASE: http://127.0.0.1:4173/
         run: |
           npx vite --host 127.0.0.1 --port 5201 --strictPort > /tmp/warm-vite.log 2>&1 &
           for i in $(seq 1 30); do
@@ -91,3 +92,4 @@ jobs:
             sleep 1
           done
           node scripts/verify-warm-workspace.mjs
+          node scripts/verify-promotions.mjs

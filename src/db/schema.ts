@@ -1,7 +1,7 @@
 /** 数据库 DDL 与有序迁移。schema_version 独立于应用版本（第 5 节）。 */
 
 export const APPLICATION_ID = 0x444f554a; // 'DOUJ'
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 export const APP_VERSION = '0.1.0';
 
 /** 首次建库执行的建表语句，按顺序执行。 */
@@ -172,7 +172,11 @@ export const INITIAL_SCHEMA: string[] = [
     refunded_at                   TEXT,
     corrected_at                  TEXT,
     note                          TEXT,
-    operation_id                  TEXT NOT NULL
+    operation_id                  TEXT NOT NULL,
+    pricing_json                  TEXT,
+    pricing_version               INTEGER NOT NULL DEFAULT 0,
+    customer_ack_version          INTEGER NOT NULL DEFAULT 0,
+    pricing_editing               INTEGER NOT NULL DEFAULT 0 CHECK (pricing_editing IN (0,1))
   )`,
   `CREATE UNIQUE INDEX idx_orders_number ON orders(event_id, human_readable_number)`,
   `CREATE INDEX idx_orders_event_status ON orders(event_id, status)`,
@@ -188,7 +192,9 @@ export const INITIAL_SCHEMA: string[] = [
     product_type_snapshot  TEXT NOT NULL,
     unit_price_minor       INTEGER NOT NULL CHECK (unit_price_minor >= 0),
     quantity               INTEGER NOT NULL CHECK (quantity > 0),
-    subtotal_minor         INTEGER NOT NULL CHECK (subtotal_minor >= 0)
+    subtotal_minor         INTEGER NOT NULL CHECK (subtotal_minor >= 0),
+    pricing_json           TEXT,
+    net_minor              INTEGER CHECK (net_minor >= 0)
   )`,
   `CREATE INDEX idx_order_items_order ON order_items(order_id)`,
 
@@ -353,6 +359,19 @@ export const MIGRATIONS: Migration[] = [
     toVersion: 2,
     sql: [
       'ALTER TABLE payment_methods ADD COLUMN confirm_requires_pin INTEGER NOT NULL DEFAULT 1 CHECK (confirm_requires_pin IN (0,1))'
+    ]
+  },
+  {
+    fromVersion: 2,
+    toVersion: 3,
+    sql: [
+      'ALTER TABLE orders ADD COLUMN pricing_json TEXT',
+      'ALTER TABLE orders ADD COLUMN pricing_version INTEGER NOT NULL DEFAULT 0',
+      'ALTER TABLE orders ADD COLUMN customer_ack_version INTEGER NOT NULL DEFAULT 0',
+      'ALTER TABLE orders ADD COLUMN pricing_editing INTEGER NOT NULL DEFAULT 0 CHECK (pricing_editing IN (0,1))',
+      'ALTER TABLE order_items ADD COLUMN pricing_json TEXT',
+      'ALTER TABLE order_items ADD COLUMN net_minor INTEGER CHECK (net_minor >= 0)',
+      'UPDATE order_items SET net_minor = subtotal_minor'
     ]
   }
 ];
