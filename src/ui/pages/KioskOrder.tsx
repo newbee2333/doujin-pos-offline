@@ -268,9 +268,9 @@ export default function KioskOrderPage() {
           )
         ) : null}
 
-        {order.status === 'completed' ? (
+        {order.status !== 'pending_payment' ? (
           <button className="primary block ord-staff" style={{ minHeight: 54 }} onClick={finishAndReturn}>
-            完成并返回菜单
+            {order.status === 'completed' ? '完成并返回菜单' : '返回游客菜单'}
           </button>
         ) : null}
       </div>

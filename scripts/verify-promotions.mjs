@@ -175,6 +175,55 @@ try {
     await offlineContext.close();
     console.log('OK 生产构建：备份恢复、离线冷启动、活动满减下单、PIN人工调价收款');
   }
+
+  // Cancel on the payment page, then return without a reload or staff privileges.
+  await page.getByRole('button', { name: '现金', exact: true }).click();
+  await page.getByRole('button', { name: /提交订单/ }).click();
+  await page.waitForURL('**/kiosk/order/*');
+  const canceledOrderId = page.url().split('/').pop();
+  await page.evaluate(async orderId => {
+    const { useApp } = await import('/src/store.ts');
+    useApp.getState().unlockStaff();
+    useApp.getState().setCurrentOrder(orderId);
+  }, canceledOrderId);
+  await page.getByRole('button', { name: '取消订单', exact: true }).click();
+  await page.getByText('该订单已取消', { exact: true }).waitFor();
+  const returnButton = page.getByRole('button', { name: '返回游客菜单', exact: true });
+  assert.equal(await returnButton.count(), 1, '取消后应有返回游客菜单按钮');
+  assert.equal(await page.getByRole('button', { name: '确认已收款', exact: true }).count(), 0);
+  await returnButton.click();
+  await page.waitForURL(base + 'kiosk');
+  const canceled = await page.evaluate(async orderId => {
+    const { useApp } = await import('/src/store.ts');
+    const { ex } = await import('/src/services/context.ts');
+    return { locked: !useApp.getState().staffUnlocked, currentOrder: useApp.getState().currentOrderId,
+      cart: useApp.getState().cart.length,
+      status: (await ex().readOne('SELECT status FROM orders WHERE id=?', [orderId])).status,
+      reserved: (await ex().readOne('SELECT SUM(reserved_stock) AS n FROM inventory')).n,
+      payments: (await ex().readOne('SELECT COUNT(*) AS n FROM payments WHERE order_id=?', [orderId])).n };
+  }, canceledOrderId);
+  assert.deepEqual(canceled, { locked: true, currentOrder: null, cart: 0, status: 'voided', reserved: 0, payments: 0 });
+
+  // A cancellation from another staff screen is picked up by polling; returning is public.
+  await page.setViewportSize({ width: 1180, height: 820 });
+  await page.locator('.add-btn').first().click();
+  await page.locator('.kiosk-side-cart').getByRole('button', { name: '去结算', exact: true }).click();
+  await page.getByRole('button', { name: '现金', exact: true }).click();
+  await page.getByRole('button', { name: /提交订单/ }).click();
+  await page.waitForURL('**/kiosk/order/*');
+  const remoteCanceledId = page.url().split('/').pop();
+  await page.evaluate(async orderId => {
+    const { voidOrder } = await import('/src/services/orders.ts');
+    await voidOrder(orderId, '后台核实未收款');
+  }, remoteCanceledId);
+  await page.getByText('该订单已取消', { exact: true }).waitFor();
+  await page.getByRole('button', { name: '返回游客菜单', exact: true }).click();
+  await page.waitForURL(base + 'kiosk');
+  await page.locator('.menu-card').first().waitFor();
+  await page.locator('.add-btn').first().click();
+  await until(() => page.locator('.side-cart-total strong').innerText(), '¥40.00 CNY');
+  assert.deepEqual(errors, []);
+  console.log('OK 手机与横屏：支付中取消、后台取消后轮询更新、返回菜单、会话复位及再次加购');
 } catch (e) {
   await page.screenshot({ path: 'test-results/promotions/failure.png', fullPage: true });
   console.error(await page.locator('body').innerText());
