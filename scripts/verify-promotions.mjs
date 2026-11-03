@@ -49,7 +49,8 @@ try {
   await page.getByRole('link', { name: '设置优惠活动', exact: true }).click();
   await page.getByRole('button', { name: '选择当前结果' }).click();
   await page.getByRole('button', { name: '批量设置优惠', exact: true }).click();
-  await page.getByRole('button', { name: '打折', exact: true }).click();
+  assert.equal(await page.getByRole('button', { name: '打几折', exact: true }).getAttribute('aria-pressed'), 'true');
+  assert.equal(await page.getByLabel('活动优惠值', { exact: true }).inputValue(), '');
   await page.getByLabel('活动优惠值', { exact: true }).fill('8');
   await page.getByRole('button', { name: '应用优惠', exact: true }).click();
   await page.getByRole('button', { name: '添加满减档位' }).click();

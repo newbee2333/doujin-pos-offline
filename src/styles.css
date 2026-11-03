@@ -2370,8 +2370,7 @@ input:disabled, select:disabled, textarea:disabled { color: var(--ink-3); opacit
 .promotion-dialog-product > div { min-width: 0; overflow-wrap: anywhere; }
 .promotion-dialog-product p { margin: 6px 0; }
 .promotion-price-method > button { flex: 1; }
-.promotion-quick-rates { display: flex; gap: 8px; flex-wrap: wrap; }
-.promotion-quick-rates > button { flex: 1; }
+.promotion-target-summary { display: grid; gap: 5px; border-left: 3px solid var(--accent); padding: 10px 14px; border-radius: 0 var(--r-sm) var(--r-sm) 0; background: var(--surface-2); overflow-wrap: anywhere; }
 .promotion-price-preview { max-height: 220px; overflow-y: auto; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-md); padding: 4px 14px; }
 .promotion-price-preview > div { display: flex; justify-content: space-between; gap: 16px; padding-block: 12px; border-bottom: 1px solid var(--line); }
 .promotion-price-preview > div:last-child { border-bottom: 0; }

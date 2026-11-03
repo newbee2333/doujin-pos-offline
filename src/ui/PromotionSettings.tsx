@@ -44,7 +44,7 @@ function PromotionForm({ data, eventId, currency, disabled }: {
   const [keyword, setKeyword] = useState('');
   const [category, setCategory] = useState('');
   const [onlyDiscounted, setOnlyDiscounted] = useState(false);
-  const [editing, setEditing] = useState<string[] | null>(null);
+  const [editing, setEditing] = useState<{ ids: string[]; scope: string; batch: boolean } | null>(null);
   const [resetting, setResetting] = useState(false);
   const [leaving, setLeaving] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -97,7 +97,7 @@ function PromotionForm({ data, eventId, currency, disabled }: {
             <button className={`chip${!category ? ' active' : ''}`} aria-pressed={!category} onClick={() => setCategory('')}>全部 <small>{available.length}</small></button>
             {activeCategories.map(cat => <button key={cat.id} className={`chip${category === cat.id ? ' active' : ''}`} aria-pressed={category === cat.id} onClick={() => setCategory(cat.id)}>{cat.name} <small>{available.filter(c => products.get(c.product_id)?.category_id === cat.id).length}</small></button>)}
           </div>
-          <div className="promotion-selection-row"><span className="small muted">{rows.length} 项 · 点封面改价，勾选后批量设置</span><div className="row wrap"><button className="small" disabled={!selectable.length} onClick={() => setSelected([...new Set([...selected, ...selectable])])}>选择当前结果</button>{category && <button className="small primary" disabled={!categoryTargets.length} onClick={() => setEditing(categoryTargets)}>整类优惠</button>}</div></div>
+          <div className="promotion-selection-row"><span className="small muted">{rows.length} 项 · 点封面改价，勾选后批量设置</span><div className="row wrap"><button className="small" disabled={!selectable.length} onClick={() => setSelected([...new Set([...selected, ...selectable])])}>选择当前结果</button>{category && <button className="small primary" disabled={!categoryTargets.length} onClick={() => setEditing({ ids: categoryTargets, scope: `${data.categories.find(c => c.id === category)?.name ?? '当前分类'} · 共 ${categoryTargets.length} 个规格`, batch: true })}>整类优惠</button>}</div></div>
           {!rows.length ? <div className="card promotion-empty"><strong>{available.length ? '没有匹配的商品' : '还没有可设置优惠的商品'}</strong><p className="small muted">{available.length ? '试试其他分类或清除搜索条件。' : '请先在展会配置中添加并上架商品；赠品不设置活动价。'}</p><Link to="/staff/events">前往展会配置</Link></div> : <div className="promotion-card-grid">
             {rows.map(c => {
               const product = products.get(c.product_id), adjustment = rules.prices[c.variant_id], base = c.event_price_minor;
@@ -106,10 +106,10 @@ function PromotionForm({ data, eventId, currency, disabled }: {
               return <article className={`menu-card menu-card-cover promotion-card${picked ? ' picked' : ''}`} key={c.variant_id} aria-label={`${c.product_name} · ${c.variant_name}`}>
                 <label className="promotion-pick" title="选择后可批量设置优惠"><input type="checkbox" aria-label={`选择 ${c.product_name} · ${c.variant_name}`} disabled={base === null} checked={picked} onChange={e => setSelected(e.target.checked ? [...selected, c.variant_id] : selected.filter(id => id !== c.variant_id))}/><span className="sr-only">选择商品</span></label>
                 {adjustment && <span className="promotion-card-tag">{discountLabel(adjustment)}</span>}
-                <button className="menu-card-info" aria-label={`设置 ${c.product_name} · ${c.variant_name} 优惠`} disabled={base === null} onClick={() => setEditing([c.variant_id])}>
+                <button className="menu-card-info" aria-label={`设置 ${c.product_name} · ${c.variant_name} 优惠`} disabled={base === null} onClick={() => setEditing({ ids: [c.variant_id], scope: `${c.product_name} · ${c.variant_name}`, batch: false })}>
                   <span className="thumb-wrap"><AssetImage assetId={product?.cover_asset_id} alt={c.product_name}/></span><span className="caption"><span className="name">{c.product_name}</span><span className="sub">{[c.category_name, c.variant_name !== '默认规格' ? c.variant_name : null].filter(Boolean).join(' · ') || '默认规格'}</span></span>
                 </button>
-                <button className="promotion-card-price" aria-label={`修改 ${c.product_name} · ${c.variant_name} 优惠价`} disabled={base === null} onClick={() => setEditing([c.variant_id])}><span className="tiny muted">{adjustment ? '活动价' : '本场价'}</span><span className="price">{price === null ? '未定价' : formatAmountOnly(price, currency)} <small>{currency}</small></span><span className="promotion-original tiny muted">{adjustment && base !== null ? <del>原价 {formatAmountOnly(base, currency)}</del> : base === null ? '先设置本场价格' : '点此设置优惠'}</span></button>
+                <button className="promotion-card-price" aria-label={`修改 ${c.product_name} · ${c.variant_name} 优惠价`} disabled={base === null} onClick={() => setEditing({ ids: [c.variant_id], scope: `${c.product_name} · ${c.variant_name}`, batch: false })}><span className="tiny muted">{adjustment ? '活动价' : '本场价'}</span><span className="price">{price === null ? '未定价' : formatAmountOnly(price, currency)} <small>{currency}</small></span><span className="promotion-original tiny muted">{adjustment && base !== null ? <del>原价 {formatAmountOnly(base, currency)}</del> : base === null ? '先设置本场价格' : '点此设置优惠'}</span></button>
                 {!!tiers.length && <span className="tiny promotion-card-scope">{eligible ? '参与满减' : '不参与满减'}</span>}
               </article>;
             })}
@@ -126,44 +126,51 @@ function PromotionForm({ data, eventId, currency, disabled }: {
         </aside>
       </div>
       <div className="promotion-save-bar">
-        {!!selected.length && <div className="promotion-batch"><div><strong>已选 {selected.length} 项</strong>{outsideSelection > 0 && <span className="tiny muted">含筛选外 {outsideSelection} 项</span>}</div><button className="primary" onClick={() => setEditing(selected)}>批量设置优惠</button><button className="small ghost" onClick={() => setSelected([])}>清除选择</button></div>}
+        {!!selected.length && <div className="promotion-batch"><div><strong>已选 {selected.length} 项</strong>{outsideSelection > 0 && <span className="tiny muted">含筛选外 {outsideSelection} 项</span>}</div><button className="primary" onClick={() => setEditing({ ids: selected, scope: `勾选商品 · 共 ${selected.length} 个规格${outsideSelection ? `（含筛选外 ${outsideSelection} 项）` : ''}`, batch: true })}>批量设置优惠</button><button className="small ghost" onClick={() => setSelected([])}>清除选择</button></div>}
         <ErrorBox message={error}/>
         <div className="promotion-save-actions"><span role="status" className={`small ${dirty ? 'promotion-unsaved' : 'muted'}`}>{disabled ? '已收摊 · 重新打开后可修改' : dirty ? '有未保存的修改 · 保存后才生效' : '本场优惠已保存'}</span><span className="spacer"/><button disabled={!dirty} onClick={() => setResetting(true)}>放弃修改</button><button className="primary" disabled={!dirty} onClick={save}>{busy ? '保存中…' : '保存本场优惠'}</button></div>
       </div>
     </fieldset>
-    {editing && <ProductPriceDialog rows={available.filter(c => editing.includes(c.variant_id))} products={products} currency={currency} rules={rules} onClose={() => setEditing(null)} onApply={adjustment => {
-      const prices = { ...rules.prices }; editing.forEach(id => { prices[id] = adjustment; }); setRules({ ...rules, prices }); setEditing(null); setError(null);
-    }} onRestore={() => { restore(editing); setEditing(null); }}/ >}
+    {editing && <ProductPriceDialog rows={available.filter(c => editing.ids.includes(c.variant_id))} scope={editing.scope} batch={editing.batch} products={products} currency={currency} rules={rules} onClose={() => setEditing(null)} onApply={adjustment => {
+      const prices = { ...rules.prices }; editing.ids.forEach(id => { prices[id] = adjustment; }); setRules({ ...rules, prices }); setEditing(null); setError(null);
+    }} onRestore={() => { restore(editing.ids); setEditing(null); }}/ >}
     {resetting && <ConfirmDialog title="放弃本次修改？" message="商品活动价和满减将恢复到上次保存的设置。" confirmText="放弃修改" onCancel={() => setResetting(false)} onConfirm={() => { setRules(savedRules); setTiers(tierDrafts(savedRules, currency)); setError(null); setResetting(false); }}/ >}
     {leaving && <ConfirmDialog title="还有未保存的优惠" message="离开会放弃本次修改。先留在此页保存，或放弃修改后离开。" confirmText="放弃并离开" onCancel={() => setLeaving(null)} onConfirm={() => navigate(leaving)}/ >}
   </>;
 }
 
-function ProductPriceDialog({ rows, products, currency, rules, onClose, onApply, onRestore }: {
+function ProductPriceDialog({ rows, scope, batch, products, currency, rules, onClose, onApply, onRestore }: {
   rows: EventConfigRow[]; products: Map<string, Awaited<ReturnType<typeof listProducts>>[number]>; currency: Currency; rules: PromotionRules;
+  scope: string; batch: boolean;
   onClose: () => void; onApply: (adjustment: PriceAdjustment) => void; onRestore: () => void;
 }) {
-  const single = rows.length === 1, existing = single ? rules.prices[rows[0].variant_id] : undefined;
-  const [kind, setKind] = useState<'price' | 'rate'>(existing?.kind ?? (single ? 'price' : 'rate'));
-  const [value, setValue] = useState(existing ? existing.kind === 'rate' ? String(existing.value / 1000) : minorToInput(existing.value, currency) : single ? minorToInput(rows[0].event_price_minor ?? 0, currency) : '8');
+  const single = rows.length === 1;
+  const first = rules.prices[rows[0]?.variant_id];
+  const existing = first && rows.every(c => {
+    const price = rules.prices[c.variant_id];
+    return price?.kind === first.kind && price.value === first.value;
+  }) ? first : undefined;
+  const [kind, setKind] = useState<'price' | 'rate'>(existing?.kind ?? (batch ? 'rate' : 'price'));
+  const [values, setValues] = useState({
+    price: existing?.kind === 'price' ? minorToInput(existing.value, currency) : '',
+    rate: existing?.kind === 'rate' ? String(existing.value / 1000) : ''
+  });
+  const value = values[kind];
+  const setValue = (next: string) => setValues(previous => ({ ...previous, [kind]: next }));
   let adjustment: PriceAdjustment | null = null, error: string | null = null;
-  try {
-    if (!value.trim()) throw new Error('请输入优惠价或折扣');
-    if (kind === 'rate' && !/^(?:10|[0-9])(?:\.\d{1,2})?$/.test(value.trim())) throw new Error('请输入 0 至 10 折，例如 8 或 9.5');
+  if (value.trim()) try {
+    if (kind === 'rate' && !/^(?:10|[0-9])(?:\.\d{1,2})?$/.test(value.trim())) throw new Error('请输入 0 至 10 折，最多两位小数');
     adjustment = { kind, value: kind === 'rate' ? Math.round(Number(value) * 1000) : parseAmountToMinor(value, currency) };
     for (const c of rows) { if (c.event_price_minor === null) throw new Error(`「${c.product_name}」需要先设置本场价格`); try { adjustedUnit(c.event_price_minor, adjustment); } catch (e) { throw new Error(`「${c.product_name}」：${errorMessage(e)}`); } }
   } catch (e) { error = errorMessage(e); }
-  function switchKind(next: 'price' | 'rate') {
-    if (kind === next) return;
-    setKind(next); setValue(next === 'rate' ? '8' : single ? minorToInput(automaticUnit(rows[0].event_price_minor ?? 0, rules.prices[rows[0].variant_id]), currency) : '');
-  }
-  return <Modal title={single ? '设置商品优惠' : `批量设置 ${rows.length} 项优惠`} onClose={onClose} className="promotion-price-dialog" actions={<><button className="ghost" onClick={onClose}>取消</button><button className="primary" disabled={!!error || !adjustment || !rows.length} onClick={() => adjustment && onApply(adjustment)}>应用优惠</button></>}>
+  return <Modal title={batch ? '批量设置优惠' : '设置商品优惠'} onClose={onClose} className="promotion-price-dialog" actions={<><button className="ghost" onClick={onClose}>取消</button><button className="primary" disabled={!!error || !adjustment || !rows.length} onClick={() => adjustment && onApply(adjustment)}>应用优惠</button></>}>
+    <div className="promotion-target-summary"><span className="tiny muted">作用范围</span><strong>{scope}</strong>{!single && <span className="tiny muted">{existing ? '已回填这批商品相同的优惠设置' : '每件商品按自己的本场原价计算'}</span>}</div>
     {single ? <div className="promotion-dialog-product"><AssetImage assetId={products.get(rows[0].product_id)?.cover_asset_id} alt={rows[0].product_name}/><div><strong>{rows[0].product_name}</strong><p className="small muted">{rows[0].variant_name}</p><span className="small">本场原价 {formatMoney(rows[0].event_price_minor ?? 0, currency)}</span></div></div> : <p className="small muted">统一应用到这 {rows.length} 个规格。每个商品按自己的本场原价计算折扣。</p>}
-    <div className="seg promotion-price-method" aria-label="优惠方式"><button className={`seg-item${kind === 'price' ? ' active' : ''}`} aria-pressed={kind === 'price'} onClick={() => switchKind('price')}>优惠单价</button><button className={`seg-item${kind === 'rate' ? ' active' : ''}`} aria-pressed={kind === 'rate'} onClick={() => switchKind('rate')}>打折</button></div>
-    <label className="field"><span>{kind === 'price' ? `优惠单价（${currency === 'CNY' ? '元' : '日元'}）` : '折扣（折）'}</span><input autoFocus aria-label="活动优惠值" inputMode="decimal" value={value} onChange={e => setValue(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing && !error && adjustment) { e.preventDefault(); onApply(adjustment); } }} placeholder={kind === 'rate' ? '如 8，表示八折' : '优惠后的每件价格'}/></label>
-    <div className="promotion-quick-rates" aria-label="快捷折扣">{[7, 8, 9, 9.5].map(rate => <button className={`small${kind === 'rate' && Number(value) === rate ? ' primary' : ''}`} key={rate} onClick={() => { setKind('rate'); setValue(String(rate)); }}>{rate} 折</button>)}</div>
+    <div className="seg promotion-price-method" aria-label="优惠方式"><button className={`seg-item${kind === 'price' ? ' active' : ''}`} aria-pressed={kind === 'price'} onClick={() => setKind('price')}>优惠单价</button><button className={`seg-item${kind === 'rate' ? ' active' : ''}`} aria-pressed={kind === 'rate'} onClick={() => setKind('rate')}>打几折</button></div>
+    <label className="field"><span>{kind === 'price' ? `优惠后单价（${currency === 'CNY' ? '元' : '日元'}）` : '折扣（折）'}</span><input autoFocus aria-label="活动优惠值" inputMode="decimal" value={value} onFocus={e => e.currentTarget.select()} onChange={e => setValue(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing && !error && adjustment) { e.preventDefault(); onApply(adjustment); } }} placeholder={kind === 'rate' ? '输入 0–10，支持小数' : '输入优惠后的每件价格'}/></label>
+    {!value.trim() && <p className="small muted">{kind === 'price' ? '输入优惠后单价，查看每件省多少钱。' : '输入折扣，逐项查看优惠后的价格。'}</p>}
     <ErrorBox message={error}/>
-    {!error && adjustment && <div className="promotion-price-preview" aria-label="优惠价格预览">{rows.map(c => { const price = adjustedUnit(c.event_price_minor!, adjustment!); return <div key={c.variant_id}><div><strong className="small">{c.product_name}</strong><span className="tiny muted">{c.variant_name}</span></div><div><del className="tiny muted">{formatMoney(c.event_price_minor!, currency)}</del><strong className="price">{formatMoney(price, currency)}</strong><span className="tiny muted">每件省 {formatMoney(c.event_price_minor! - price, currency)}</span></div></div>; })}</div>}
+    {!error && adjustment && <div className="promotion-price-preview" aria-label="优惠价格预览">{rows.map(c => { const price = adjustedUnit(c.event_price_minor!, adjustment!); return <div key={c.variant_id}><div><strong className="small">{c.product_name}</strong><span className="tiny muted">{c.variant_name}</span></div><div><del className="tiny muted">原价 {formatMoney(c.event_price_minor!, currency)}</del><strong className="price">→ {formatMoney(price, currency)}</strong><span className="tiny muted">每件省 {formatMoney(c.event_price_minor! - price, currency)}</span></div></div>; })}</div>}
     <button className="small ghost" onClick={onRestore}>恢复{single ? '本商品' : '这批商品'}的本场原价</button><p className="tiny muted">应用后可在卡片上核对，点页面底部「保存本场优惠」才正式生效。</p>
   </Modal>;
 }

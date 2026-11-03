@@ -27,9 +27,21 @@ async function save() {
 }
 async function draftPrice(name, value) {
   await card(name).getByRole('button', { name: /^设置 / }).click();
+  const dialog = page.getByRole('dialog');
+  assert.equal(await page.getByRole('button', { name: '优惠单价', exact: true }).getAttribute('aria-pressed'), 'true');
+  assert.equal(await page.getByLabel('活动优惠值', { exact: true }).inputValue(), '');
+  assert.equal(await dialog.locator('.notice.danger').count(), 0, '未输入时不应显示错误');
+  assert.equal(await page.getByRole('button', { name: '应用优惠', exact: true }).isDisabled(), true);
+  assert.equal(await dialog.getByRole('button', { name: /^(7|8|9|9\.5) 折$/ }).count(), 0, '不再展示固定折扣档位');
+  await page.screenshot({ path: 'test-results/promotion-cards/empty-dialog.png' });
   await page.getByRole('button', { name: '优惠单价', exact: true }).click();
   await page.getByLabel('活动优惠值', { exact: true }).fill(value);
-  await page.getByRole('button', { name: '应用优惠', exact: true }).click();
+  await page.getByRole('button', { name: '打几折', exact: true }).click();
+  assert.equal(await page.getByLabel('活动优惠值', { exact: true }).inputValue(), '', '切换模式不预填八折');
+  await page.getByLabel('活动优惠值', { exact: true }).fill('9.2');
+  await page.getByRole('button', { name: '优惠单价', exact: true }).click();
+  assert.equal(await page.getByLabel('活动优惠值', { exact: true }).inputValue(), value, '保留用户在另一模式已输入的值');
+  await page.getByLabel('活动优惠值', { exact: true }).press('Enter');
 }
 try {
   await page.goto(base);
@@ -85,26 +97,46 @@ try {
   assert.equal((await stored()).prices[fixture.ids[0]].value, 8800);
   assert.equal((await stored()).prices[fixture.alternate], undefined, '单规格改价不能影响同商品其他规格');
 
+  await card('夏日徽章 · 默认规格').getByRole('checkbox').check();
+  await page.getByRole('button', { name: '批量设置优惠', exact: true }).click();
+  assert.equal(await page.getByRole('button', { name: '打几折', exact: true }).getAttribute('aria-pressed'), 'true', '只选一件的批量操作也默认按折扣输入');
+  assert.equal(await page.getByLabel('活动优惠值', { exact: true }).inputValue(), '');
+  await page.getByRole('button', { name: '取消', exact: true }).click();
+  await page.getByRole('button', { name: '清除选择', exact: true }).click();
+
   // Whole-category action deliberately includes the category's filtered-out products.
   await page.getByRole('button', { name: /^新刊 / }).click();
   await page.getByLabel('搜索活动商品').fill('月色');
   await page.getByRole('button', { name: '整类优惠', exact: true }).click();
-  await page.getByRole('button', { name: '8 折', exact: true }).click();
+  assert.equal(await page.getByRole('dialog').getByText('新刊 · 共 4 个规格', { exact: true }).count(), 1);
+  assert.equal(await page.getByRole('button', { name: '打几折', exact: true }).getAttribute('aria-pressed'), 'true');
+  assert.equal(await page.getByLabel('活动优惠值', { exact: true }).inputValue(), '');
+  await page.getByLabel('活动优惠值', { exact: true }).fill('8.8');
+  assert.match(await page.getByLabel('优惠价格预览').innerText(), /105.60/);
+  assert.equal(await page.getByRole('button', { name: '应用优惠', exact: true }).isEnabled(), true);
+  await page.screenshot({ path: 'test-results/promotion-cards/category-dialog.png' });
   await page.getByRole('button', { name: '应用优惠', exact: true }).click();
   await save();
   const categoryRules = await stored();
-  for (const id of [fixture.ids[0], fixture.ids[1], fixture.ids[4], fixture.alternate]) assert.deepEqual(categoryRules.prices[id], { kind: 'rate', value: 8000 });
+  for (const id of [fixture.ids[0], fixture.ids[1], fixture.ids[4], fixture.alternate]) assert.deepEqual(categoryRules.prices[id], { kind: 'rate', value: 8800 });
   assert.equal(categoryRules.prices[fixture.ids[2]], undefined);
+  await page.getByRole('button', { name: '整类优惠', exact: true }).click();
+  assert.equal(await page.getByLabel('活动优惠值', { exact: true }).inputValue(), '8.8', '整类已有一致优惠时回填原值');
+  await page.getByRole('button', { name: '取消', exact: true }).click();
   await page.getByLabel('搜索活动商品').fill('');
   await card('春日画集 · 默认规格').getByRole('checkbox').check();
   await page.getByRole('button', { name: /^徽章 / }).click();
   await card('星光徽章 · 默认规格').getByRole('checkbox').check();
   await page.getByText('含筛选外 1 项', { exact: true }).waitFor();
   await page.getByRole('button', { name: '批量设置优惠', exact: true }).click();
+  assert.equal(await page.getByLabel('活动优惠值', { exact: true }).inputValue(), '', '所选商品优惠不一致时应留空');
+  await page.getByRole('dialog').getByText('勾选商品 · 共 2 个规格（含筛选外 1 项）', { exact: true }).waitFor();
   await page.getByRole('button', { name: '优惠单价', exact: true }).click();
   await page.getByLabel('活动优惠值', { exact: true }).fill('50');
   assert.equal(await page.getByRole('button', { name: '应用优惠', exact: true }).isDisabled(), true, '固定价高于任一商品原价时整批拒绝');
-  await page.getByRole('button', { name: '9.5 折', exact: true }).click();
+  await page.getByRole('button', { name: '打几折', exact: true }).click();
+  assert.equal(await page.getByLabel('活动优惠值', { exact: true }).inputValue(), '');
+  await page.getByLabel('活动优惠值', { exact: true }).fill('9.5');
   await page.getByRole('button', { name: '应用优惠', exact: true }).click();
   await page.getByLabel('全部非赠品商品参与', { exact: true }).uncheck();
   await page.getByRole('button', { name: '使用当前勾选商品', exact: true }).click();
@@ -115,7 +147,7 @@ try {
   assert.deepEqual([...finalRules.eligible].sort(), [fixture.ids[0], fixture.ids[2]].sort());
   assert.equal(finalRules.prices[fixture.ids[0]].value, 9500);
   assert.equal(finalRules.prices[fixture.ids[2]].value, 9500);
-  assert.equal(finalRules.prices[fixture.ids[1]].value, 8000);
+  assert.equal(finalRules.prices[fixture.ids[1]].value, 8800);
   await page.getByRole('button', { name: '清除选择', exact: true }).click();
   await page.getByRole('button', { name: /^全部 / }).click();
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
@@ -132,6 +164,7 @@ try {
   }
   await page.evaluate(() => document.documentElement.dataset.theme = 'warm');
   await card('春日画集 · 默认规格').getByRole('button', { name: /^设置 / }).click();
+  assert.equal(await page.getByLabel('活动优惠值', { exact: true }).inputValue(), '9.5');
   await page.screenshot({ path: 'test-results/promotion-cards/single-dialog.png', fullPage: true });
   await page.getByRole('button', { name: '恢复本商品的本场原价', exact: true }).click();
   await page.getByRole('button', { name: '放弃修改', exact: true }).click();
