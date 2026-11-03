@@ -20,6 +20,8 @@ export interface Dashboard {
   unitsSold: number;
   giftUnits: number;
   orderCount: number;
+  listSalesMinor: number;
+  discountMinor: number;
 }
 
 export async function getDashboard(eventId: string): Promise<Dashboard> {
@@ -37,6 +39,7 @@ export async function getDashboard(eventId: string): Promise<Dashboard> {
     'SELECT SUM(r.amount_minor) AS v FROM refunds r JOIN orders o ON o.id = r.order_id WHERE o.event_id = ?',
     [eventId]
   );
+  const listSalesMinor = await sum(`SELECT SUM(COALESCE(json_extract(pricing_json,'$.listTotal'),total_minor)) AS v FROM orders WHERE event_id=? AND status IN ${SALES_STATUSES}`, [eventId]);
   const correctionMinor = await sum(
     "SELECT SUM(total_minor) AS v FROM orders WHERE event_id = ? AND status = 'corrected'",
     [eventId]
@@ -68,6 +71,8 @@ export async function getDashboard(eventId: string): Promise<Dashboard> {
   return {
     currency: event.currency,
     salesMinor,
+    listSalesMinor,
+    discountMinor: listSalesMinor - salesMinor,
     refundMinor,
     netSalesMinor: salesMinor - refundMinor,
     correctionMinor,
@@ -121,8 +126,8 @@ export interface ProductRankRow {
 export function getProductRanking(eventId: string): Promise<ProductRankRow[]> {
   return ex().read<ProductRankRow>(
     `SELECT oi.product_name_snapshot AS product_name, oi.variant_name_snapshot AS variant_name,
-            oi.sku_snapshot AS sku, SUM(oi.quantity) AS units, SUM(oi.subtotal_minor) AS amount_minor,
-            SUM(CASE WHEN o.status = 'refunded' THEN 1 ELSE 0 END) AS refund_order_count
+            oi.sku_snapshot AS sku, SUM(oi.quantity) AS units, SUM(COALESCE(oi.net_minor,oi.subtotal_minor)) AS amount_minor,
+            COUNT(DISTINCT CASE WHEN o.status = 'refunded' THEN o.id END) AS refund_order_count
      FROM order_items oi JOIN orders o ON o.id = oi.order_id
      WHERE o.event_id = ? AND o.status IN ${SALES_STATUSES}
      GROUP BY oi.product_name_snapshot, oi.variant_name_snapshot, oi.sku_snapshot
@@ -399,7 +404,9 @@ function toCsv(headers: string[], rows: unknown[][]): string {
 export async function exportOrdersCsv(eventId: string): Promise<string> {
   const rows = await ex().read<Record<string, unknown>>(
     `SELECT o.human_readable_number, o.status, o.currency, o.total_minor, o.source, o.created_at, o.completed_at,
-            p.method_name_snapshot, r.amount_minor AS refund_amount, oc.reason AS correction_reason
+            p.method_name_snapshot, r.amount_minor AS refund_amount, oc.reason AS correction_reason,
+            COALESCE(json_extract(o.pricing_json,'$.listTotal'),o.total_minor) AS list_total_minor,
+            COALESCE(json_extract(o.pricing_json,'$.discount'),0) AS discount_minor
      FROM orders o
      LEFT JOIN payments p ON p.order_id = o.id
      LEFT JOIN refunds r ON r.order_id = o.id
@@ -408,7 +415,7 @@ export async function exportOrdersCsv(eventId: string): Promise<string> {
     [eventId]
   );
   return toCsv(
-    ['订单号', '状态', '币种', '金额(最小单位)', '来源', '创建时间', '完成时间', '收款方式', '退款金额', '纠错原因'],
+    ['订单号', '状态', '币种', '金额(最小单位)', '来源', '创建时间', '完成时间', '收款方式', '退款金额', '纠错原因', '本场原价金额(最小单位)', '优惠合计(最小单位)'],
     rows.map((r) => [
       r.human_readable_number,
       r.status,
@@ -419,7 +426,9 @@ export async function exportOrdersCsv(eventId: string): Promise<string> {
       r.completed_at,
       r.method_name_snapshot,
       r.refund_amount,
-      r.correction_reason
+      r.correction_reason,
+      r.list_total_minor,
+      r.discount_minor
     ])
   );
 }
@@ -427,13 +436,15 @@ export async function exportOrdersCsv(eventId: string): Promise<string> {
 export async function exportOrderItemsCsv(eventId: string): Promise<string> {
   const rows = await ex().read<Record<string, unknown>>(
     `SELECT o.human_readable_number, oi.product_name_snapshot, oi.variant_name_snapshot, oi.sku_snapshot,
-            oi.product_type_snapshot, oi.unit_price_minor, oi.quantity, oi.subtotal_minor, o.currency, o.status
+            oi.product_type_snapshot, oi.unit_price_minor, oi.quantity, oi.subtotal_minor, o.currency, o.status,
+            COALESCE(oi.net_minor,oi.subtotal_minor) AS net_minor,
+            COALESCE(json_extract(oi.pricing_json,'$.listUnit'),oi.unit_price_minor)*oi.quantity-COALESCE(oi.net_minor,oi.subtotal_minor) AS discount_minor
      FROM order_items oi JOIN orders o ON o.id = oi.order_id
      WHERE o.event_id = ? ORDER BY o.human_readable_number`,
     [eventId]
   );
   return toCsv(
-    ['订单号', '商品', '规格', 'SKU', '类型', '单价(最小单位)', '数量', '小计(最小单位)', '币种', '订单状态'],
+    ['订单号', '商品', '规格', 'SKU', '类型', '单价(最小单位)', '数量', '小计(最小单位)', '币种', '订单状态', '优惠后金额(最小单位)', '优惠合计(最小单位)'],
     rows.map((r) => [
       r.human_readable_number,
       r.product_name_snapshot,
@@ -444,7 +455,9 @@ export async function exportOrderItemsCsv(eventId: string): Promise<string> {
       r.quantity,
       r.subtotal_minor,
       r.currency,
-      r.status
+      r.status,
+      r.net_minor,
+      r.discount_minor
     ])
   );
 }

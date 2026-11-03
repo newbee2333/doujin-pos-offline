@@ -7,6 +7,7 @@ import { getEvent, getEventPaymentMethods } from '../../services/events';
 import { useApp, errorMessage } from '../../store';
 import { AssetImage, ErrorBox, Spinner, useAssetUrl, useAsync } from '../components';
 import type { Currency } from '../../domain/types';
+import { PriceSummary, PromotionHint, useCartQuote } from '../Pricing';
 
 export default function KioskCheckoutPage() {
   const navigate = useNavigate();
@@ -20,6 +21,7 @@ export default function KioskCheckoutPage() {
   const [error, setError] = useState<string | null>(null);
 
   const event = useAsync(() => (eventId ? getEvent(eventId) : Promise.resolve(null)), [eventId]);
+  const quote = useCartQuote(eventId, cart);
   const methods = useAsync(
     () => (eventId ? getEventPaymentMethods(eventId) : Promise.resolve([])),
     [eventId]
@@ -27,7 +29,7 @@ export default function KioskCheckoutPage() {
 
   const currency: Currency = event.data?.currency ?? 'CNY';
   const eventActive = event.data?.status === 'active';
-  const totalMinor = cart.reduce((a, c) => a + c.priceMinor * c.quantity, 0);
+  const totalMinor = quote.data?.total ?? 0;
   const usable = (methods.data ?? []).filter((m) => m.type !== 'qr_payment' || m.qr_asset_id);
 
   if (!eventId) return <ErrorBox message="未选择展会" />;
@@ -50,6 +52,8 @@ export default function KioskCheckoutPage() {
         eventId: eventId!,
         lines: cart.map((c) => ({ variantId: c.variantId, quantity: c.quantity })),
         plannedPaymentMethodId: totalMinor > 0 ? methodId || null : null,
+        expectedTotalMinor: quote.data!.total,
+        expectedPromotionVersion: quote.data!.rules.version,
         operationId: newId()
       });
       setCurrentOrder(orderId);
@@ -57,6 +61,7 @@ export default function KioskCheckoutPage() {
       navigate(`/kiosk/order/${orderId}`);
     } catch (e) {
       setError(errorMessage(e));
+      quote.reload();
     } finally {
       setBusy(false);
     }
@@ -74,7 +79,8 @@ export default function KioskCheckoutPage() {
       <div className="content narrow kiosk-with-action-bar">
         <div className="card">
           <h2>订单内容</h2>
-          {cart.map((c) => (
+          <PromotionHint rules={quote.data?.rules} currency={currency}/>
+          {cart.map((c, index) => (
             <div key={c.variantId} className="row" style={{ padding: '6px 0' }}>
               <AssetImage
                 assetId={c.coverAssetId}
@@ -84,12 +90,13 @@ export default function KioskCheckoutPage() {
               <div style={{ flex: 1 }}>
                 <div>{c.productName}</div>
                 <div className="small muted">
-                  {c.variantName} · {formatMoney(c.priceMinor, currency)} × {c.quantity}
+                  {c.variantName} · {formatMoney(quote.data?.lines[index]?.unit ?? c.priceMinor, currency)} × {c.quantity}
                 </div>
               </div>
-              <div className="strong nowrap">{formatMoney(c.priceMinor * c.quantity, currency)}</div>
+              <div className="strong nowrap">{formatMoney(quote.data?.lines[index]?.subtotal ?? c.priceMinor * c.quantity, currency)}</div>
             </div>
           ))}
+          <PriceSummary quote={quote.data} currency={currency}/>
           <div className="row" style={{ marginTop: 10, borderTop: '1px solid var(--line)', paddingTop: 10 }}>
             <span className="strong">应付总额</span>
             <span className="spacer" />
@@ -120,7 +127,7 @@ export default function KioskCheckoutPage() {
           <div className="notice ok">本单为零元订单，提交后请摊主确认发放。</div>
         )}
 
-        <ErrorBox message={error} />
+        <ErrorBox message={error ?? quote.error} />
 
         {event.data && !eventActive ? (
           <div className="notice danger">
@@ -136,7 +143,7 @@ export default function KioskCheckoutPage() {
         <div className="inner">
           <button
             className="primary block"
-            disabled={busy || (totalMinor > 0 && !methodId) || !eventActive}
+            disabled={busy || !quote.data || quote.loading || (totalMinor > 0 && !methodId) || !eventActive}
             onClick={submit}
           >
             {busy ? <span className="spinner" /> : null}

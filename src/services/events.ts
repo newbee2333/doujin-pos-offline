@@ -206,6 +206,11 @@ export async function duplicateEvent(id: string, newName: string): Promise<strin
     },
     {
       t: 'run',
+      sql: 'INSERT INTO settings (key,value) SELECT ?,value FROM settings WHERE key=?',
+      params: [`promotions.${freshId}`, `promotions.${id}`]
+    },
+    {
+      t: 'run',
       sql: `INSERT INTO event_payment_methods (event_id, payment_method_id, enabled, sort_order)
             SELECT ?, payment_method_id, enabled, sort_order FROM event_payment_methods WHERE event_id = ?`,
       params: [freshId, id]
@@ -413,6 +418,12 @@ export async function removeVariantsFromEvent(eventId: string, variantIds: strin
     sql: 'DELETE FROM event_variant_configs WHERE event_id = ? AND variant_id = ?',
     params: [eventId, variantId]
   }));
+  // Removed products must not leave invisible, uneditable special prices behind.
+  for (const variantId of variantIds) {
+    steps.push({ t: 'run', sql: 'UPDATE settings SET value=json_remove(value,?) WHERE key=?',
+      params: [`$.prices.${JSON.stringify(variantId)}`, `promotions.${eventId}`] });
+  }
+  steps.push({ t: 'run', sql: "UPDATE settings SET value=json_set(value,'$.version',?) WHERE key=?", params: [newId(), `promotions.${eventId}`] });
   steps.push(auditStep('event.variant_remove', 'event', eventId, { variantIds }));
   await ex().tx(steps);
 }

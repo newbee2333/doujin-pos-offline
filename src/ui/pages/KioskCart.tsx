@@ -4,6 +4,7 @@ import { getEvent } from '../../services/events';
 import { useApp } from '../../store';
 import { AssetImage, ErrorBox, QtyStepper, useAsync } from '../components';
 import type { Currency } from '../../domain/types';
+import { PriceSummary, useCartQuote } from '../Pricing';
 
 export default function KioskCartPage() {
   const navigate = useNavigate();
@@ -11,9 +12,10 @@ export default function KioskCartPage() {
   const setCart = useApp((s) => s.setCart);
   const eventId = useApp((s) => s.currentEventId);
   const event = useAsync(() => (eventId ? getEvent(eventId) : Promise.resolve(null)), [eventId]);
+  const quote = useCartQuote(eventId, cart);
 
   const currency: Currency = event.data?.currency ?? 'CNY';
-  const totalMinor = cart.reduce((a, c) => a + c.priceMinor * c.quantity, 0);
+  const totalMinor = quote.data?.total ?? 0;
 
   if (!eventId) return <ErrorBox message="未选择展会" />;
 
@@ -39,7 +41,7 @@ export default function KioskCartPage() {
           <p className="muted">购物车是空的。</p>
         ) : (
           <div className="col">
-            {cart.map((c) => (
+            {cart.map((c, index) => (
               <div key={c.variantId} className="card">
                 <div className="row">
                   <AssetImage
@@ -51,7 +53,7 @@ export default function KioskCartPage() {
                     <div className="strong">{c.productName}</div>
                     <div className="small muted">{c.variantName}</div>
                     <div className="small muted">
-                      {formatMoney(c.priceMinor, currency)} × {c.quantity}
+                      {formatMoney(quote.data?.lines[index]?.unit ?? c.priceMinor, currency)} × {c.quantity}
                     </div>
                   </div>
                   <QtyStepper
@@ -60,12 +62,14 @@ export default function KioskCartPage() {
                     max={c.maxAvailable}
                     onChange={(v) => setQty(c.variantId, v)}
                   />
-                  <div className="strong nowrap">{formatMoney(c.priceMinor * c.quantity, currency)}</div>
+                  <div className="strong nowrap">{formatMoney(quote.data?.lines[index]?.subtotal ?? c.priceMinor * c.quantity, currency)}</div>
                 </div>
               </div>
             ))}
 
             <div className="card">
+              <PriceSummary quote={quote.data} currency={currency}/>
+              <ErrorBox message={quote.error}/>
               <div className="row">
                 <span className="strong">合计</span>
                 <span className="spacer" />

@@ -31,6 +31,7 @@ import StaffCheckoutPage from './ui/pages/StaffCheckout';
 import StaffPendingPage from './ui/pages/StaffPending';
 import StaffProductsPage from './ui/pages/StaffProducts';
 import StaffEventsPage from './ui/pages/StaffEvents';
+import StaffPromotionsPage from './ui/pages/StaffPromotions';
 import StaffInventoryPage from './ui/pages/StaffInventory';
 import StaffOrdersPage from './ui/pages/StaffOrders';
 import StaffReportsPage from './ui/pages/StaffReports';
@@ -337,6 +338,9 @@ function Sidebar() {
           <NavLink to="/staff/events" className={({ isActive }) => (isActive ? 'active' : '')}>
             展会配置
           </NavLink>
+          <NavLink to="/staff/promotions" className={({ isActive }) => (isActive ? 'active' : '')}>
+            优惠活动
+          </NavLink>
         </div>
 
         <div className="nav-group">
@@ -434,6 +438,10 @@ function Shell() {
                   <StaffEventsPage />
                 </StaffGuard>
               }
+            />
+            <Route
+              path="/staff/promotions"
+              element={<StaffGuard><StaffPromotionsPage /></StaffGuard>}
             />
             <Route
               path="/staff/inventory"

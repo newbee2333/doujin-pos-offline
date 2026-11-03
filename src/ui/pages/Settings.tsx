@@ -6,6 +6,8 @@ import { errorMessage, useApp } from '../../store';
 import { ErrorBox, Field, SetPinFlow, Spinner, useAsync } from '../components';
 import { formatBytes } from '../../domain/image';
 import { useTheme, type ThemePreference } from '../../theme';
+import { authorizeAdjustment, requiresAdjustmentPin } from '../../services/promotions';
+import { Modal } from '../components';
 
 const THEME_OPTIONS: { value: ThemePreference; label: string; hint: string }[] = [
   { value: 'system', label: '跟随系统', hint: '随设备自动切换' },
@@ -26,11 +28,16 @@ export default function SettingsPage() {
   const { preference, setPreference, lightPalette, setLightPalette, storageError } = useTheme();
 
   const pinSet = useAsync(() => isPinSet(), []);
+  const adjustmentSecurity = useAsync(requiresAdjustmentPin, []);
+  const [changingSecurity, setChangingSecurity] = useState(false);
+  const [securityPin, setSecurityPin] = useState('');
+  const [securityBusy, setSecurityBusy] = useState(false);
   const persisted = useAsync(() => requestPersistence(), []);
   const caps = useAsync(() => checkCapabilities(), []);
 
   return (
     <div className="page narrow">
+      {changingSecurity && <Modal title="关闭调价密码确认" onClose={securityBusy ? undefined : () => setChangingSecurity(false)} actions={<><button disabled={securityBusy} onClick={() => setChangingSecurity(false)}>取消</button><button className="primary" disabled={securityBusy} onClick={async () => { setSecurityBusy(true); try { await authorizeAdjustment(securityPin); await setSetting('security.adjustment_pin', '0'); setSecurityPin(''); setChangingSecurity(false); adjustmentSecurity.reload(); setError(null); } catch (e) { setError(errorMessage(e)); } finally { setSecurityBusy(false); } }}>确认关闭</button></>}><p>关闭后，已解锁后台的人员可以直接人工调价。请输入后台密码确认。</p><input type="password" aria-label="安全设置确认密码" inputMode="numeric" value={securityPin} onChange={e => setSecurityPin(e.target.value)}/><ErrorBox message={error}/></Modal>}
       <h1>设置</h1>
 
       <div className="card">
@@ -79,6 +86,11 @@ export default function SettingsPage() {
 
       <div className="card">
         <h2>安全与访问</h2>
+        <label className="check"><input type="checkbox" role="switch" checked={adjustmentSecurity.data ?? true} disabled={adjustmentSecurity.loading || !!adjustmentSecurity.error} onChange={async e => {
+          if (!e.target.checked) { setChangingSecurity(true); setError(null); }
+          else { try { await setSetting('security.adjustment_pin', '1'); adjustmentSecurity.reload(); } catch (e) { setError(errorMessage(e)); } }
+        }}/>人工调价需要后台密码确认</label>
+        <p className="tiny muted">默认开启。调价与后台共用密码，连续输错 5 次需等待一分钟；调价原因和金额会记入审计。此设置随数据库备份保存。</p>
         <p className="small muted">
           后台密码为 4～8 位数字，用于防止游客误触后台，不能代替设备锁屏密码。请妥善保管。
         </p>

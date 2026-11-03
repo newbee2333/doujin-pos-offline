@@ -17,7 +17,8 @@ export const INVARIANT_CHECKS: InvariantCheck[] = [
     label: '订单金额关系',
     sql: `SELECT COUNT(*) FROM (
       SELECT o.id FROM orders o
-      WHERE o.subtotal_minor <> o.total_minor
+      WHERE o.total_minor > o.subtotal_minor
+         OR o.total_minor <> COALESCE((SELECT SUM(COALESCE(oi.net_minor,oi.subtotal_minor)) FROM order_items oi WHERE oi.order_id=o.id),0)
          OR o.subtotal_minor <> COALESCE((SELECT SUM(oi.subtotal_minor) FROM order_items oi WHERE oi.order_id = o.id), 0)
     )`
   },
@@ -25,7 +26,25 @@ export const INVARIANT_CHECKS: InvariantCheck[] = [
     name: 'order_item_amounts',
     label: '订单行金额',
     sql: `SELECT COUNT(*) FROM order_items
-          WHERE subtotal_minor <> unit_price_minor * quantity`
+          WHERE subtotal_minor <> unit_price_minor * quantity OR COALESCE(net_minor,subtotal_minor)>subtotal_minor
+          OR (pricing_json IS NOT NULL AND (net_minor IS NULL
+            OR net_minor <> subtotal_minor - json_extract(pricing_json,'$.thresholdDiscount') - json_extract(pricing_json,'$.orderDiscount')))`
+  },
+  {
+    name: 'pricing_snapshots',
+    label: '优惠快照与订单金额一致',
+    sql: `SELECT COUNT(*) FROM orders o WHERE o.pricing_json IS NOT NULL AND (
+      json_extract(o.pricing_json,'$.total') IS NOT o.total_minor
+      OR json_extract(o.pricing_json,'$.subtotal') IS NOT o.subtotal_minor
+      OR json_extract(o.pricing_json,'$.listTotal') IS NOT
+        (SELECT SUM(json_extract(oi.pricing_json,'$.listUnit')*oi.quantity) FROM order_items oi WHERE oi.order_id=o.id)
+      OR json_extract(o.pricing_json,'$.discount') IS NOT
+        json_extract(o.pricing_json,'$.listTotal')-o.total_minor
+      OR json_extract(o.pricing_json,'$.thresholdDiscount') IS NOT
+        (SELECT SUM(json_extract(oi.pricing_json,'$.thresholdDiscount')) FROM order_items oi WHERE oi.order_id=o.id)
+      OR json_extract(o.pricing_json,'$.orderDiscount') IS NOT
+        (SELECT SUM(json_extract(oi.pricing_json,'$.orderDiscount')) FROM order_items oi WHERE oi.order_id=o.id)
+    )`
   },
   {
     name: 'pending_has_no_payment',

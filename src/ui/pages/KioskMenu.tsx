@@ -9,6 +9,7 @@ import { useApp } from '../../store';
 import { AssetImage, ErrorBox, Modal, Money, QtyStepper, Spinner, useAsync } from '../components';
 import MenuCard from '../MenuCard';
 import KioskSideCart from '../KioskSideCart';
+import { PromotionHint, useCartQuote } from '../Pricing';
 
 export default function KioskMenuPage() {
   const navigate = useNavigate();
@@ -26,6 +27,7 @@ export default function KioskMenuPage() {
   const menu = useAsync(() => (eventId ? getKioskMenu(eventId) : Promise.resolve([])), [eventId]);
   const cats = useAsync(() => listCategories(false), []);
   const layout = useAsync(getLandscapeCartEnabled, []);
+  const quote = useCartQuote(eventId, cart);
 
   const filtered = useMemo(() => {
     const list = menu.data ?? [];
@@ -41,7 +43,7 @@ export default function KioskMenuPage() {
   }, [menu.data, category, keyword]);
 
   const totalQty = cart.reduce((a, c) => a + c.quantity, 0);
-  const totalMinor = cart.reduce((a, c) => a + c.priceMinor * c.quantity, 0);
+  const totalMinor = quote.data?.total ?? 0;
   const currency = (menu.data?.[0]?.currency ?? 'CNY') as MenuItem['currency'];
 
   if (!eventId) {
@@ -157,6 +159,8 @@ export default function KioskMenuPage() {
         </div>
       </div>
 
+      <PromotionHint rules={quote.data?.rules} currency={currency}/>
+      <ErrorBox message={quote.error}/>
       <div className="kiosk-menu-body">
       <div className="menu-grid">
         {filtered.map((item) => {
@@ -194,7 +198,7 @@ export default function KioskMenuPage() {
         })}
         {!filtered.length ? <p className="muted">没有找到商品。</p> : null}
       </div>
-      <KioskSideCart cart={cart} currency={currency} onSetQty={updateCartQty} onClear={() => setClearing(true)} onCheckout={() => navigate('/kiosk/checkout')} />
+      <KioskSideCart cart={cart} currency={currency} quote={quote.data} onSetQty={updateCartQty} onClear={() => setClearing(true)} onCheckout={() => navigate('/kiosk/checkout')} />
       </div>
 
       {clearing ? <Modal title="清空购物车" onClose={() => setClearing(false)} actions={<>

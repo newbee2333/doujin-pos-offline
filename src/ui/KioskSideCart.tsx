@@ -2,18 +2,21 @@ import type { CartItem } from '../store';
 import type { Currency } from '../domain/types';
 import { formatAmountOnly, formatMoney } from '../domain/money';
 import { AssetImage, QtyStepper } from './components';
+import { PriceSummary } from './Pricing';
+import type { Quote } from '../domain/pricing';
 
 /** The landscape menu shares the same cart and checkout as the compact layout. */
-export default function KioskSideCart({ cart, currency, onSetQty, onClear, onCheckout, preview = false }: {
+export default function KioskSideCart({ cart, currency, onSetQty, onClear, onCheckout, preview = false, quote }: {
   cart: CartItem[];
   currency: Currency;
   onSetQty: (variantId: string, quantity: number) => void;
   onClear: () => void;
   onCheckout: () => void;
   preview?: boolean;
+  quote?: Quote | null;
 }) {
   const count = cart.reduce((sum, item) => sum + item.quantity, 0);
-  const total = cart.reduce((sum, item) => sum + item.quantity * item.priceMinor, 0);
+  const total = quote?.total ?? cart.reduce((sum, item) => sum + item.quantity * item.priceMinor, 0);
   return (
     <aside className="kiosk-side-cart" aria-labelledby="side-cart-title">
       <header className="side-cart-header">
@@ -33,19 +36,19 @@ export default function KioskSideCart({ cart, currency, onSetQty, onClear, onChe
             <strong>购物车还是空的</strong>
             <p>点击左侧商品的＋，加入购物车</p>
           </div>
-        ) : cart.map(item => (
+        ) : cart.map((item, index) => (
           <article className="side-cart-item" key={item.variantId} aria-label={item.productName}>
             <div className="side-cart-product">
               <AssetImage assetId={item.coverAssetId} alt={item.productName} className="side-cart-thumb" />
               <div className="side-cart-product-info">
                 <div className="strong side-cart-product-name">{item.productName}</div>
                 {item.variantName !== '默认规格' ? <div className="tiny muted">{item.variantName}</div> : null}
-                <div className="tiny muted">{formatMoney(item.priceMinor, currency)} × {item.quantity}</div>
+                <div className="tiny muted">{formatMoney(quote?.lines[index]?.unit ?? item.priceMinor, currency)} × {item.quantity}</div>
               </div>
             </div>
             <div className="side-cart-item-actions">
               <span className="strong side-cart-line-total">
-                <span>{formatAmountOnly(item.priceMinor * item.quantity, currency)}</span>
+                <span>{formatAmountOnly(quote?.lines[index]?.subtotal ?? item.priceMinor * item.quantity, currency)}</span>
                 <small>{currency}</small>
               </span>
               <QtyStepper value={item.quantity} min={0} max={item.maxAvailable} onChange={qty => onSetQty(item.variantId, qty)} />
@@ -55,6 +58,7 @@ export default function KioskSideCart({ cart, currency, onSetQty, onClear, onChe
       </div>
 
       <footer className="side-cart-footer">
+        <PriceSummary quote={quote} currency={currency} compact/>
         <div className="side-cart-total"><span>合计</span><strong>{formatMoney(total, currency)}</strong></div>
         <p className="tiny muted">{preview ? '预览购物车，不会生成订单' : '提交订单后才会占用库存'}</p>
         <button className="primary block" disabled={!cart.length || preview} onClick={onCheckout}>{preview ? '去结算（预览）' : '去结算'}</button>

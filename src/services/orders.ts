@@ -25,6 +25,8 @@ import { auditStep, beginIdempotent, ex, idempotencyStep } from './context';
 import { DomainError } from './catalog';
 import { getBundleComponentsBatch } from './catalog';
 import { getEvent } from './events';
+import { automaticUnit, type OrderAdjustment, type PricedLine, type PriceAdjustment } from '../domain/pricing';
+import { authorizeAdjustment, getPromotions, promotionGuard, quoteCart } from './promotions';
 
 export class OrderValidationError extends Error {
   issues: string[];
@@ -40,6 +42,8 @@ export class OrderValidationError extends Error {
 export interface CartLine {
   variantId: string;
   quantity: number;
+  lineId?: string;
+  manual?: PriceAdjustment;
 }
 
 interface VariantContext {
@@ -71,6 +75,7 @@ interface ResolvedItem {
   productType: ProductType;
   unitPrice: number;
   subtotal: number;
+  pricing?: PricedLine;
   /** 每 1 件该商品消耗的库存成分。 */
   perUnitComponents: { variantId: string; quantity: number; name: string; sku: string | null }[];
 }
@@ -82,6 +87,7 @@ export interface OrderPlan {
   /** 整单合并后的成分需求。 */
   componentDemand: Map<string, number>;
   totalMinor: number;
+  pricing: Awaited<ReturnType<typeof quoteCart>>;
 }
 
 /* ------------------------------------------------------------ 解析与校验 */
@@ -89,13 +95,15 @@ export interface OrderPlan {
 export async function buildOrderPlan(
   eventId: string,
   lines: CartLine[],
-  opts: { source: OrderSource; expectedPrices?: Record<string, number> }
+  opts: { source: OrderSource; expectedPrices?: Record<string, number>; manual?: OrderAdjustment }
 ): Promise<OrderPlan> {
   const event = await getEvent(eventId);
   if (!event) throw new DomainError('展会不存在');
   if (event.status !== 'active') throw new DomainError('展会未在开始状态，不能下单');
 
   if (!lines.length) throw new OrderValidationError(['购物车是空的']);
+  if (opts.source === 'kiosk' && (opts.manual || lines.some(l => l.manual))) throw new DomainError('游客不能设置人工优惠');
+  const pricing = await quoteCart(eventId, lines, opts.manual);
   const issues: string[] = [];
   const priceChanges: { variantId: string; oldPrice: number; newPrice: number }[] = [];
 
@@ -152,7 +160,8 @@ export async function buildOrderPlan(
       issues.push(`「${ctx.product_name}」未设置本场价格`);
       continue;
     }
-    const unitPrice = ctx.product_type === 'gift' ? 0 : Number(ctx.event_price_minor ?? 0);
+    const priced = pricing.lines[lines.indexOf(line)];
+    const unitPrice = priced.unit;
     if (opts.expectedPrices && opts.expectedPrices[line.variantId] !== undefined) {
       const expected = opts.expectedPrices[line.variantId];
       if (expected !== unitPrice) {
@@ -188,6 +197,7 @@ export async function buildOrderPlan(
       productType: ctx.product_type,
       unitPrice,
       subtotal: mulQty(unitPrice, qty),
+      pricing: priced,
       perUnitComponents
     });
   }
@@ -198,6 +208,8 @@ export async function buildOrderPlan(
 
   // 整单合并成分需求
   const componentDemand = new Map<string, number>();
+  const directQuantities = new Map<string, number>();
+  for (const item of items) directQuantities.set(item.variantId, (directQuantities.get(item.variantId) ?? 0) + item.quantity);
   for (const item of items) {
     for (const c of item.perUnitComponents) {
       const need = c.quantity * item.quantity;
@@ -230,10 +242,10 @@ export async function buildOrderPlan(
   const consumedByVariant = new Map<string, number>(componentDemand);
   for (const item of items) {
     // 套装自身也是商品，要受自己的限购约束（componentDemand 里只有它的成分，没有它自己）
-    if (item.productType === 'bundle') {
+    if (item.productType === 'bundle' || item.productType === 'non_stock') {
       consumedByVariant.set(
         item.variantId,
-        Math.max(consumedByVariant.get(item.variantId) ?? 0, item.quantity)
+        Math.max(consumedByVariant.get(item.variantId) ?? 0, directQuantities.get(item.variantId) ?? 0)
       );
     }
   }
@@ -270,11 +282,18 @@ export async function buildOrderPlan(
     currency: event.currency,
     items,
     componentDemand,
-    totalMinor: sumMinor(items.map((i) => i.subtotal))
+    totalMinor: pricing.total,
+    pricing
   };
 }
 
 /* -------------------------------------------------------------- 建单步骤 */
+function checkExpectedQuote(plan: OrderPlan, expected: { expectedTotalMinor?: number; expectedPromotionVersion?: string }) {
+  if ((expected.expectedTotalMinor !== undefined && expected.expectedTotalMinor !== plan.totalMinor) ||
+      (expected.expectedPromotionVersion !== undefined && expected.expectedPromotionVersion !== plan.pricing.rules.version)) {
+    throw new DomainError('价格或优惠已变化，请重新核对金额后提交');
+  }
+}
 
 interface BuildResult {
   orderId: string;
@@ -292,6 +311,15 @@ function insertOrderSteps(
 ): Step[] {
   const now = nowIso();
   const steps: Step[] = [
+    promotionGuard(plan.eventId, plan.pricing.rules),
+    ...plan.pricing.lines.map((line): Step => ({
+      t: 'assert',
+      sql: `SELECT COUNT(*) FROM event_variant_configs c JOIN product_variants v ON v.id=c.variant_id
+            JOIN products p ON p.id=v.product_id WHERE c.event_id=? AND c.variant_id=? AND c.enabled=1
+            AND (CASE WHEN p.type='gift' THEN 0 ELSE c.event_price_minor END)=?`,
+      params: [plan.eventId, line.variantId, line.listUnit], equals: 1,
+      message: '本场定价或上架状态已变化，请重新核对后提交'
+    })),
     {
       t: 'assert',
       sql: "SELECT CASE WHEN (SELECT status FROM events WHERE id = ?) = 'active' THEN 1 ELSE 0 END",
@@ -312,7 +340,7 @@ function insertOrderSteps(
         plan.eventId,
         status,
         plan.currency,
-        plan.totalMinor,
+        plan.pricing.subtotal,
         plan.totalMinor,
         planned.id,
         planned.name,
@@ -328,14 +356,15 @@ function insertOrderSteps(
       expectChanges: 1
     }
   ];
+  steps.push({ t: 'run', sql: 'UPDATE orders SET pricing_json = ? WHERE id = ?', params: [JSON.stringify(plan.pricing), orderId] });
 
   for (const item of plan.items) {
     const itemId = newId();
     steps.push({
       t: 'run',
       sql: `INSERT INTO order_items (id, order_id, product_id, variant_id, product_name_snapshot, variant_name_snapshot,
-              sku_snapshot, product_type_snapshot, unit_price_minor, quantity, subtotal_minor)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              sku_snapshot, product_type_snapshot, unit_price_minor, quantity, subtotal_minor, pricing_json, net_minor)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       params: [
         itemId,
         orderId,
@@ -347,7 +376,9 @@ function insertOrderSteps(
         item.productType,
         item.unitPrice,
         item.quantity,
-        item.subtotal
+        item.subtotal,
+        JSON.stringify(item.pricing),
+        item.pricing!.net
       ]
     });
     for (const c of item.perUnitComponents) {
@@ -458,6 +489,8 @@ export interface CreatePendingInput {
   plannedPaymentMethodId: string | null;
   operationId?: string;
   note?: string | null;
+  expectedTotalMinor?: number;
+  expectedPromotionVersion?: string;
 }
 
 /** 游客提交：创建 pending_payment 并预留库存。 */
@@ -467,6 +500,7 @@ export async function createPendingOrder(input: CreatePendingInput): Promise<{ o
   if (existing) return existing as { orderId: string };
 
   const plan = await buildOrderPlan(input.eventId, input.lines, { source: 'kiosk' });
+  checkExpectedQuote(plan, input);
   let planned = { id: null as string | null, name: null as string | null, type: null as PaymentMethodType | null, instruction: null as string | null, qr: null as string | null };
   if (plan.totalMinor > 0) {
     if (!input.plannedPaymentMethodId) throw new DomainError('请选择支付方式');
@@ -497,23 +531,34 @@ export interface StaffSaleInput {
   tenderedMinor?: number | null;
   operationId?: string;
   note?: string | null;
+  manual?: OrderAdjustment;
+  adjustmentPin?: string;
+  adjustmentReason?: string;
+  expectedTotalMinor?: number;
+  expectedPromotionVersion?: string;
 }
 
 /** 摊主直接收银：一步完成，扣实际库存并写收款。 */
 export async function staffDirectSale(input: StaffSaleInput): Promise<{ orderId: string }> {
   const opId = input.operationId ?? newId();
-  const { hash, existing } = await beginIdempotent('order.staffSale', opId, input);
+  const { adjustmentPin, ...payload } = input;
+  const { hash, existing } = await beginIdempotent('order.staffSale', opId, payload);
   if (existing) return existing as { orderId: string };
 
-  const plan = await buildOrderPlan(input.eventId, input.lines, { source: 'staff' });
+  const plan = await buildOrderPlan(input.eventId, input.lines, { source: 'staff', manual: input.manual });
+  checkExpectedQuote(plan, input);
+  if (input.manual || input.lines.some(l => l.manual)) {
+    if (!input.adjustmentReason?.trim()) throw new DomainError('请填写人工调价原因');
+    await authorizeAdjustment(adjustmentPin);
+  }
   const method = await ex().readOne<{ id: string; name: string; type: PaymentMethodType; instruction: string | null; qr_asset_id: string | null }>(
     'SELECT id, name, type, instruction, qr_asset_id FROM payment_methods WHERE id = ?',
     [input.paymentMethodId]
   );
-  if (!method) throw new DomainError('支付方式不存在');
+  if (!method && plan.totalMinor > 0) throw new DomainError('支付方式不存在');
 
   if (plan.totalMinor > 0) {
-    if (method.type === 'cash') {
+    if (method!.type === 'cash') {
       const tendered = input.tenderedMinor ?? null;
       if (tendered === null) throw new DomainError('现金收款请填写实收金额');
       if (tendered < plan.totalMinor) throw new DomainError('实收金额小于应付金额');
@@ -521,15 +566,15 @@ export async function staffDirectSale(input: StaffSaleInput): Promise<{ orderId:
   }
 
   const orderId = newId();
-  const planned = { id: method.id, name: method.name, type: method.type, instruction: method.instruction, qr: method.qr_asset_id };
+  const planned = { id: method?.id ?? null, name: method?.name ?? null, type: method?.type ?? null, instruction: method?.instruction ?? null, qr: method?.qr_asset_id ?? null };
   const steps: Step[] = [
     ...insertOrderSteps(plan, orderId, 'completed', 'staff', opId, planned, input.note),
     ...consumeSteps(plan, orderId, opId)
   ];
   if (plan.totalMinor > 0) {
-    steps.push(paymentStep(orderId, method, plan.totalMinor, plan.currency, opId, input.tenderedMinor ?? null));
+    steps.push(paymentStep(orderId, method!, plan.totalMinor, plan.currency, opId, input.tenderedMinor ?? null));
   }
-  steps.push(auditStep('order.staffSale', 'order', orderId, { total: plan.totalMinor, method: method.name }));
+  steps.push(auditStep('order.staffSale', 'order', orderId, { total: plan.totalMinor, method: method?.name, pricing: plan.pricing, reason: input.adjustmentReason }));
   steps.push(idempotencyStep(opId, 'order.staffSale', hash, { orderId }));
   await ex().tx(steps);
   return { orderId };
@@ -540,6 +585,7 @@ export interface ConfirmInput {
   paymentMethodId?: string | null;
   tenderedMinor?: number | null;
   operationId?: string;
+  expectedPricingVersion?: number;
 }
 
 /**
@@ -554,6 +600,8 @@ export async function confirmPayment(input: ConfirmInput): Promise<void> {
   const order = await ex().readOne<Order>('SELECT * FROM orders WHERE id = ?', [input.orderId]);
   if (!order) throw new DomainError('订单不存在');
   if (order.status !== 'pending_payment') throw new DomainError('只有待付款订单可以确认收款');
+  if (order.pricing_editing || (order.customer_ack_version ?? 0) !== (order.pricing_version ?? 0)) throw new DomainError('金额正在调整或尚未重新确认，请先核对新金额');
+  if ((input.expectedPricingVersion ?? 0) !== (order.pricing_version ?? 0)) throw new DomainError('订单金额已变化，请刷新并核对后再收款');
   if (order.total_minor > 0) {
     const methodId = input.paymentMethodId ?? order.planned_payment_method_id;
     if (!methodId) throw new DomainError('请选择实际收款方式');
@@ -577,6 +625,7 @@ export async function confirmPayment(input: ConfirmInput): Promise<void> {
   );
 
   const steps: Step[] = [
+    { t: 'assert', sql: 'SELECT COUNT(*) FROM orders WHERE id=? AND pricing_version=? AND customer_ack_version=pricing_version AND pricing_editing=0', params: [order.id, order.pricing_version ?? 0], equals: 1, message: '金额已变化或正在调整，请重新确认' },
     {
       t: 'assert',
       sql: "SELECT CASE WHEN (SELECT status FROM orders WHERE id = ?) = 'pending_payment' THEN 1 ELSE 0 END",
@@ -956,7 +1005,7 @@ export async function listOrderSummaries(filter: OrderFilter = {}): Promise<Orde
 
 export interface OrderDetail {
   order: Order;
-  items: (OrderItem & { components: { component_variant_id: string; quantity_total: number; component_name_snapshot: string }[] })[];
+  items: (OrderItem & { components: { component_variant_id: string; quantity_total: number; component_name_snapshot: string; sku_snapshot?: string | null }[] })[];
   payment: Payment | null;
   refund: Refund | null;
   correction: { id: string; reason: string; created_at: string; returns: { component_variant_id: string; quantity_returned: number }[] } | null;
@@ -1094,6 +1143,7 @@ export async function getKioskMenu(eventId: string): Promise<MenuItem[]> {
 
   const bundleIds = rows.filter((r) => r.product_type === 'bundle').map((r) => r.variant_id);
   const bundleAvailable = await getBundleAvailability(eventId, bundleIds);
+  const rules = await getPromotions(eventId);
 
   return rows.map((r) => {
     let available: number | null = null;
@@ -1113,7 +1163,8 @@ export async function getKioskMenu(eventId: string): Promise<MenuItem[]> {
       category_id: r.category_id,
       category_name: r.category_name,
       product_type: r.product_type,
-      price_minor: r.product_type === 'gift' ? 0 : Number(r.event_price_minor ?? 0),
+      price_minor: automaticUnit(r.product_type === 'gift' ? 0 : Number(r.event_price_minor ?? 0), rules.prices[r.variant_id]),
+      list_price_minor: r.product_type === 'gift' ? 0 : Number(r.event_price_minor ?? 0),
       currency: event.currency,
       cover_asset_id: r.cover_asset_id,
       available_stock: available,

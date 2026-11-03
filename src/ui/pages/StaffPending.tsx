@@ -8,6 +8,9 @@ import { newId } from '../../domain/ids';
 import { errorMessage, useApp } from '../../store';
 import { ErrorBox, Spinner, useAsync } from '../components';
 import type { Currency, Order } from '../../domain/types';
+import PendingPriceEditor from '../PendingPriceEditor';
+import { acknowledgeOrderPrice } from '../../services/order-pricing';
+import { PriceSummary } from '../Pricing';
 
 /** 队列按「最早在前」排——先来的先处理，和现场排队顺序一致。
     listOrders 默认是 created_at DESC（订单页要最新的在上），这里反过来。 */
@@ -33,6 +36,7 @@ export default function StaffPendingPage() {
   const [methodFor, setMethodFor] = useState<Record<string, string>>({});
   const [tenderedFor, setTenderedFor] = useState<Record<string, string>>({});
   const [selectedId, setSelectedId] = useState<string | null>(() => params.get('order'));
+  const [adjustOrder, setAdjustOrder] = useState<Order | null>(null);
 
   const orders = useAsync(
     () => (eventId ? listOrders({ eventId, status: 'pending_payment' }) : Promise.resolve([])),
@@ -87,7 +91,7 @@ export default function StaffPendingPage() {
       const m = allMethods.data?.find((x) => x.id === methodId);
       const tenderedMinor =
         m?.type === 'cash' ? parseAmountToMinor(tenderedFor[o.id] || '0', currency) : null;
-      await confirmPayment({ orderId: o.id, paymentMethodId: methodId || null, tenderedMinor, operationId: newId() });
+      await confirmPayment({ orderId: o.id, paymentMethodId: methodId || null, tenderedMinor, expectedPricingVersion: o.pricing_version ?? 0, operationId: newId() });
       showToast(`订单 #${o.human_readable_number} 已确认`);
       orders.reload();
     } catch (e) {
@@ -113,7 +117,7 @@ export default function StaffPendingPage() {
   }
 
   if (!eventId) return <ErrorBox message="请先选择展会" />;
-  if (orders.loading) {
+  if (orders.loading && !orders.data) {
     return (
       <div className="center-page">
         <Spinner label="读取待付款订单…" />
@@ -128,6 +132,7 @@ export default function StaffPendingPage() {
 
   return (
     <div className="page page-cols">
+      {adjustOrder && <PendingPriceEditor order={adjustOrder} onClose={() => { setAdjustOrder(null); orders.reload(); }} onDone={() => { setTenderedFor(previous => { const next = { ...previous }; delete next[adjustOrder.id]; return next; }); setAdjustOrder(null); orders.reload(); showToast('金额已调整，请顾客重新核对'); }}/ >}
       <div className="page-head">
         <h1>待付款与挂起订单</h1>
         {queue.length ? <span className="badge accent">{queue.length} 笔等待处理</span> : null}
@@ -192,6 +197,8 @@ export default function StaffPendingPage() {
               </div>
 
               <div className="side-panel-foot">
+                <button className="small" disabled={!!busyId} onClick={() => setAdjustOrder(selected)}>{selected.pricing_editing ? '继续调价 / 取消调价' : '人工优惠 / 调整应收'}</button>
+                {selected.pricing_editing ? <div className="notice warn">本单正在调价，暂时不能确认收款。可继续调价或取消本次调整。</div> : (selected.customer_ack_version ?? 0) !== (selected.pricing_version ?? 0) ? <div className="notice warn"><p>金额已调整，请顾客重新核对。</p><button disabled={!!busyId} onClick={async () => { setBusyId(selected.id); try { await acknowledgeOrderPrice(selected.id, selected.pricing_version ?? 0, 'staff'); orders.reload(); } catch (e) { setError(errorMessage(e)); } finally { setBusyId(null); } }}>顾客已核对新的应收金额</button></div> : null}
                 {selected.total_minor > 0 ? (
                   <>
                     <div className="field-label">实际收款方式（可与顾客选择不同）</div>
@@ -242,7 +249,7 @@ export default function StaffPendingPage() {
                   <button
                     className="primary"
                     style={{ flex: 1, minHeight: 52 }}
-                    disabled={busyId === selected.id || (selected.total_minor > 0 && !selectedMethodId)}
+                    disabled={busyId === selected.id || !!selected.pricing_editing || (selected.customer_ack_version ?? 0) !== (selected.pricing_version ?? 0) || (selected.total_minor > 0 && !selectedMethodId)}
                     onClick={() => confirm(selected)}
                   >
                     {busyId === selected.id ? <span className="spinner" /> : null}
@@ -272,7 +279,7 @@ export default function StaffPendingPage() {
 
 /** 选中订单的明细：来源、时间、预留件数、等待时长、逐行商品。 */
 function PendingDetail({ order, currency }: { order: Order; currency: Currency }) {
-  const d = useAsync(() => getOrderDetail(order.id), [order.id]);
+  const d = useAsync(() => getOrderDetail(order.id), [order.id, order.pricing_version]);
   const items = d.data?.items ?? [];
   const units = items.reduce((a, it) => a + it.quantity, 0);
   const waited = waitedMinutes(order.created_at);
@@ -296,10 +303,11 @@ function PendingDetail({ order, currency }: { order: Order; currency: Currency }
               {formatMoney(it.unit_price_minor, currency)} × {it.quantity}
             </div>
           </div>
-          <div className="pos-line-amt">{formatMoney(it.subtotal_minor, currency)}</div>
+          <div className="pos-line-amt">{formatMoney(it.net_minor ?? it.subtotal_minor, currency)}</div>
         </div>
       ))}
 
+      <PriceSummary quote={order.pricing_json ? JSON.parse(order.pricing_json) : null} currency={currency}/>
       {order.note ? <div className="notice info">备注：{order.note}</div> : null}
     </>
   );

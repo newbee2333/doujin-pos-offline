@@ -166,6 +166,10 @@ export interface Order {
   corrected_at: string | null;
   note: string | null;
   operation_id: string;
+  pricing_json?: string | null;
+  pricing_version?: number;
+  customer_ack_version?: number;
+  pricing_editing?: number;
 }
 
 export interface OrderItem {
@@ -180,6 +184,8 @@ export interface OrderItem {
   unit_price_minor: number;
   quantity: number;
   subtotal_minor: number;
+  pricing_json?: string | null;
+  net_minor?: number | null;
 }
 
 export interface OrderInventoryComponent {
@@ -264,6 +270,7 @@ export interface MenuItem {
   category_name: string | null;
   product_type: ProductType;
   price_minor: number;
+  list_price_minor?: number;
   currency: Currency;
   cover_asset_id: string | null;
   available_stock: number | null;

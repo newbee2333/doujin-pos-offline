@@ -34,6 +34,7 @@ import { AdjustStockModal } from '../AdjustStockModal';
 import ReopenEventDialog from '../ReopenEventDialog';
 import { AssetImage, ErrorBox, Field, InfoDot, Spinner, useAsync } from '../components';
 import AddProductsModal from './AddProductsModal';
+import PromotionSettings from '../PromotionSettings';
 import { ProductEditorModal } from '../ProductEditor';
 import type { Currency } from '../../domain/types';
 import type { ProductWithVariants } from '../../services/catalog';
@@ -511,6 +512,7 @@ function EventDetail({
         <ErrorBox message={error} />
       </div>
 
+      <PromotionSettings eventId={eventId} currency={currency} disabled={ev.status === 'closed'}/>
       <div className="card">
         <div className="row">
           <h2 style={{ margin: 0 }}>参展商品</h2>

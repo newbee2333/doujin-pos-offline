@@ -100,6 +100,7 @@ export default function StaffReportsPage() {
           <div className="report-orders"><span className="eyebrow">已完成订单</span><strong>{dash.data.counts.completed}<small> 笔</small></strong><span className="small muted">待付款 {dash.data.counts.pending_payment} · 已取消 {dash.data.counts.voided}</span><span className="tiny muted">已退款 {dash.data.counts.refunded} · 已纠错 {dash.data.counts.corrected}</span></div>
           <dl className="report-secondary">
             <div><dt>销售额</dt><dd>{formatMoney(dash.data.salesMinor, currency)}</dd></div>
+            <div><dt>优惠合计</dt><dd>{formatMoney(dash.data.discountMinor, currency)}</dd></div>
             <div><dt>退款额</dt><dd>{formatMoney(dash.data.refundMinor, currency)}</dd></div>
             <div><dt>销量 / 赠品发放</dt><dd>{dash.data.unitsSold} / {dash.data.giftUnits}<small> 件</small></dd></div>
             <div><dt>纠错额（审计）</dt><dd>{formatMoney(dash.data.correctionMinor, currency)}</dd></div>
