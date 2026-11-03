@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import type { Currency } from '../domain/types';
 import { formatAmountOnly, formatMoney, minorToInput, parseAmountToMinor } from '../domain/money';
@@ -157,9 +157,15 @@ function ProductPriceDialog({ rows, scope, batch, products, currency, rules, onC
   });
   const value = values[kind];
   const setValue = (next: string) => setValues(previous => ({ ...previous, [kind]: next }));
+  const inputId = useId();
+  const validRate = /^(?:10|[0-9])(?:\.\d{1,2})?$/.test(value.trim()) && Number(value) <= 10;
+  const stepRate = !value.trim() ? 10 : validRate ? Number(value) : null;
+  const changeRate = (delta: number) => {
+    if (stepRate !== null) setValue(String(Math.max(0, Math.min(1000, Math.round(stepRate * 100) + delta * 100)) / 100));
+  };
   let adjustment: PriceAdjustment | null = null, error: string | null = null;
   if (value.trim()) try {
-    if (kind === 'rate' && !/^(?:10|[0-9])(?:\.\d{1,2})?$/.test(value.trim())) throw new Error('请输入 0 至 10 折，最多两位小数');
+    if (kind === 'rate' && !validRate) throw new Error('请输入 0 至 10 折，最多两位小数');
     adjustment = { kind, value: kind === 'rate' ? Math.round(Number(value) * 1000) : parseAmountToMinor(value, currency) };
     for (const c of rows) { if (c.event_price_minor === null) throw new Error(`「${c.product_name}」需要先设置本场价格`); try { adjustedUnit(c.event_price_minor, adjustment); } catch (e) { throw new Error(`「${c.product_name}」：${errorMessage(e)}`); } }
   } catch (e) { error = errorMessage(e); }
@@ -167,8 +173,15 @@ function ProductPriceDialog({ rows, scope, batch, products, currency, rules, onC
     <div className="promotion-target-summary"><span className="tiny muted">作用范围</span><strong>{scope}</strong>{!single && <span className="tiny muted">{existing ? '已回填这批商品相同的优惠设置' : '每件商品按自己的本场原价计算'}</span>}</div>
     {single ? <div className="promotion-dialog-product"><AssetImage assetId={products.get(rows[0].product_id)?.cover_asset_id} alt={rows[0].product_name}/><div><strong>{rows[0].product_name}</strong><p className="small muted">{rows[0].variant_name}</p><span className="small">本场原价 {formatMoney(rows[0].event_price_minor ?? 0, currency)}</span></div></div> : <p className="small muted">统一应用到这 {rows.length} 个规格。每个商品按自己的本场原价计算折扣。</p>}
     <div className="seg promotion-price-method" aria-label="优惠方式"><button className={`seg-item${kind === 'price' ? ' active' : ''}`} aria-pressed={kind === 'price'} onClick={() => setKind('price')}>优惠单价</button><button className={`seg-item${kind === 'rate' ? ' active' : ''}`} aria-pressed={kind === 'rate'} onClick={() => setKind('rate')}>打几折</button></div>
-    <label className="field"><span>{kind === 'price' ? `优惠后单价（${currency === 'CNY' ? '元' : '日元'}）` : '折扣（折）'}</span><input autoFocus aria-label="活动优惠值" inputMode="decimal" value={value} onFocus={e => e.currentTarget.select()} onChange={e => setValue(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing && !error && adjustment) { e.preventDefault(); onApply(adjustment); } }} placeholder={kind === 'rate' ? '输入 0–10，支持小数' : '输入优惠后的每件价格'}/></label>
-    {!value.trim() && <p className="small muted">{kind === 'price' ? '输入优惠后单价，查看每件省多少钱。' : '输入折扣，逐项查看优惠后的价格。'}</p>}
+    <div className="field">
+      <label htmlFor={inputId}>{kind === 'price' ? `优惠后单价（${currency === 'CNY' ? '元' : '日元'}）` : '折扣（折）'}</label>
+      <div className={kind === 'rate' ? 'qty promotion-rate-stepper' : undefined}>
+        {kind === 'rate' && <button type="button" aria-label="减少一折" disabled={stepRate === null || stepRate <= 0} onClick={() => changeRate(-1)}>−</button>}
+        <input id={inputId} autoFocus aria-label="活动优惠值" inputMode="decimal" value={value} onFocus={e => e.currentTarget.select()} onChange={e => setValue(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing && !error && adjustment) { e.preventDefault(); onApply(adjustment); } }} placeholder={kind === 'rate' ? '10 折起算，也可直接输入' : '输入优惠后的每件价格'}/>
+        {kind === 'rate' && <button type="button" aria-label="增加一折" disabled={stepRate === null || stepRate >= 10} onClick={() => changeRate(1)}>+</button>}
+      </div>
+    </div>
+    {!value.trim() && <p className="small muted">{kind === 'price' ? '输入优惠后单价，查看每件省多少钱。' : '点减号从 10 折开始调整，或直接输入折扣。'}</p>}
     <ErrorBox message={error}/>
     {!error && adjustment && <div className="promotion-price-preview" aria-label="优惠价格预览">{rows.map(c => { const price = adjustedUnit(c.event_price_minor!, adjustment!); return <div key={c.variant_id}><div><strong className="small">{c.product_name}</strong><span className="tiny muted">{c.variant_name}</span></div><div><del className="tiny muted">原价 {formatMoney(c.event_price_minor!, currency)}</del><strong className="price">→ {formatMoney(price, currency)}</strong><span className="tiny muted">每件省 {formatMoney(c.event_price_minor! - price, currency)}</span></div></div>; })}</div>}
     <button className="small ghost" onClick={onRestore}>恢复{single ? '本商品' : '这批商品'}的本场原价</button><p className="tiny muted">应用后可在卡片上核对，点页面底部「保存本场优惠」才正式生效。</p>

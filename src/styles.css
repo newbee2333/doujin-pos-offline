@@ -2370,6 +2370,9 @@ input:disabled, select:disabled, textarea:disabled { color: var(--ink-3); opacit
 .promotion-dialog-product > div { min-width: 0; overflow-wrap: anywhere; }
 .promotion-dialog-product p { margin: 6px 0; }
 .promotion-price-method > button { flex: 1; }
+.promotion-rate-stepper { width: 100%; gap: 8px; }
+.promotion-rate-stepper > input { flex: 1; width: 0; min-width: 0; text-align: center; }
+.promotion-rate-stepper > button { flex: none; }
 .promotion-target-summary { display: grid; gap: 5px; border-left: 3px solid var(--accent); padding: 10px 14px; border-radius: 0 var(--r-sm) var(--r-sm) 0; background: var(--surface-2); overflow-wrap: anywhere; }
 .promotion-price-preview { max-height: 220px; overflow-y: auto; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-md); padding: 4px 14px; }
 .promotion-price-preview > div { display: flex; justify-content: space-between; gap: 16px; padding-block: 12px; border-bottom: 1px solid var(--line); }
