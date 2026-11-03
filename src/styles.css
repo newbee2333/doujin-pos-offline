@@ -776,6 +776,39 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   color: #fff;
 }
 
+/* 顾客目录：分类用下划线标出当前项，让封面和购买动作主导页面。 */
+.kiosk-menu .kiosk-hero {
+  border-radius: 0;
+  border-bottom: 1px solid var(--line);
+  box-shadow: none;
+}
+.kiosk-menu .kiosk-hero-title { margin: 0; }
+:is(.kiosk-menu, .preview-frame) .kiosk-chips { gap: var(--sp-3); }
+:is(.kiosk-menu, .preview-frame) .kiosk-chips .chip {
+  border: 0;
+  border-radius: 0;
+  padding-inline: var(--sp-2);
+  background: transparent;
+}
+:is(.kiosk-menu, .preview-frame) .kiosk-chips .chip.active,
+:is(.kiosk-menu, .preview-frame) .kiosk-chips .chip.active:hover:not(:disabled) {
+  background: transparent;
+  color: var(--accent);
+  box-shadow: inset 0 -2px var(--accent);
+}
+:is(.kiosk-menu, .preview-frame) .kiosk-chips .chip:focus-visible { outline-offset: -3px; }
+.kiosk-menu .kiosk-search { border-radius: var(--r-md); }
+.preview-frame .preview-categories { padding-inline: var(--sp-4); }
+:is(.kiosk-menu, .preview-frame) .kiosk-search input { min-width: 0; }
+:is(.kiosk-menu, .preview-frame) .kiosk-search:focus-within { outline: 2px solid var(--accent); }
+@container (max-width: 700px) {
+  .kiosk-menu .kiosk-hero-top { column-gap: var(--sp-2); }
+  .kiosk-menu .kiosk-search { flex-basis: 100px; }
+}
+
+.menu-promotion { display: flex; flex-wrap: wrap; gap: 0 6px; align-items: baseline; }
+.menu-promotion > span { background: var(--accent-soft); color: var(--accent); border-radius: var(--r-sm); padding: 1px 6px; font-size: var(--fs-caption); font-weight: 700; white-space: nowrap; }
+
 /* 列数按「容器」宽度决定，不再用 auto-fill 让浏览器自己算。
    原因：卡片真正关心的是它所在容器的宽度，不是视口宽度——
    预览功能会把菜单渲染进 390 / 820 / 1180 三种尺寸的画框里，
@@ -834,7 +867,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .menu-card .thumb-placeholder {
   width: 100%;
   aspect-ratio: 3 / 4;
-  background: repeating-linear-gradient(45deg, var(--surface-2), var(--surface-2) 10px, var(--line) 10px, var(--line) 20px);
+  background: var(--surface-2);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -956,13 +989,11 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   font-weight: 700;
   padding: 3px 10px;
   border-radius: var(--r-full);
-  background: rgba(15, 23, 42, 0.45);
+  background: rgb(15 23 42 / 78%);
   color: #fff;
-  backdrop-filter: blur(4px);
 }
 .menu-card-cover .stock-tag.warn { background: rgba(180, 83, 9, 0.92); }
 .menu-card-cover .stock-tag.danger { background: rgba(220, 38, 38, 0.92); }
-.menu-card-cover .stock-tag.flat { background: rgba(15, 23, 42, 0.45); }
 .menu-card-cover .sold-veil {
   position: absolute;
   inset: 0;
@@ -1032,6 +1063,22 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .menu-card-cover.sold-out .thumb,
 .menu-card-cover.sold-out .thumb-placeholder { opacity: 0.55; filter: grayscale(0.9); }
 .menu-card-cover.sold-out .price { color: var(--ink-3); }
+
+/* 展开封面，避免每张商品同时叠加内框、投影和强调色。 */
+:is(.kiosk-menu, .preview-frame) .menu-card-cover {
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  box-shadow: none;
+}
+:is(.kiosk-menu, .preview-frame) .menu-card-cover .thumb,
+:is(.kiosk-menu, .preview-frame) .menu-card-cover .thumb-placeholder,
+:is(.kiosk-menu, .preview-frame) .menu-card-cover .sold-veil { border-radius: 0; }
+:is(.kiosk-menu, .preview-frame) .menu-card-cover .caption { padding-inline: var(--sp-3); }
+:is(.kiosk-menu, .preview-frame) .menu-card-cover .menu-card-action { padding: var(--sp-1) var(--sp-3) var(--sp-2); }
+:is(.kiosk-menu, .preview-frame) .menu-card-cover .menu-card-action .price { color: var(--ink); }
+:is(.kiosk-menu, .preview-frame) .menu-card-cover.sold-out .price { color: var(--ink-3); }
+:is(.kiosk-menu, .preview-frame) .menu-card-info:focus-visible { outline-offset: -3px; }
 
 /* 购物车里的商品小图。
    封面是竖版，所以小图也保持竖构图；object-position 与卡片一致（重心上移）。
@@ -1592,9 +1639,8 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   font-weight: 700;
   padding: 2px 8px;
   border-radius: var(--r-full);
-  background: rgba(15, 23, 42, 0.45);
+  background: rgb(15 23 42 / 78%);
   color: #fff;
-  backdrop-filter: blur(4px);
 }
 .pos-card .stock-tag.warn { background: rgba(180, 83, 9, 0.92); }
 .pos-card .stock-tag.danger { background: rgba(220, 38, 38, 0.92); }
@@ -2188,7 +2234,7 @@ input:disabled, select:disabled, textarea:disabled { color: var(--ink-3); opacit
 .light-theme-options { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .palette-swatch { width: 36px; height: 40px; flex: none; border: 1px solid #cbd5e1; border-radius: 6px; background: linear-gradient(90deg, #f8fafc 50%, #fff 50%); }
 .palette-swatch.warm { border-color: #e6ddcc; background: linear-gradient(90deg, #f7f3ec 50%, #f1eadd 50%); }
-.backup-reminder { display: flex; gap: 8px; align-items: baseline; padding: 8px 10px; margin: 8px 0 12px; background: var(--warn-soft); border-left: 3px solid var(--warn); color: var(--warn); font-size: var(--fs-small); line-height: 1.5; }
+.backup-reminder { display: flex; padding: 10px 12px; margin: 8px 0 12px; background: var(--warn-soft); border-radius: var(--r-sm); color: var(--warn); font-size: var(--fs-small); line-height: 1.5; }
 .eyebrow { color: var(--ink-3); font-size: var(--fs-caption); }
 .home-workspace { max-width: 1480px; margin-inline: auto; }
 .workspace-hero { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 24px; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 24px; margin-top: 16px; }
@@ -2373,7 +2419,7 @@ input:disabled, select:disabled, textarea:disabled { color: var(--ink-3); opacit
 .promotion-rate-stepper { width: 100%; gap: 8px; }
 .promotion-rate-stepper > input { flex: 1; width: 0; min-width: 0; text-align: center; }
 .promotion-rate-stepper > button { flex: none; }
-.promotion-target-summary { display: grid; gap: 5px; border-left: 3px solid var(--accent); padding: 10px 14px; border-radius: 0 var(--r-sm) var(--r-sm) 0; background: var(--surface-2); overflow-wrap: anywhere; }
+.promotion-target-summary { display: grid; gap: 5px; padding: 0 0 12px; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
 .promotion-price-preview { max-height: 220px; overflow-y: auto; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-md); padding: 4px 14px; }
 .promotion-price-preview > div { display: flex; justify-content: space-between; gap: 16px; padding-block: 12px; border-bottom: 1px solid var(--line); }
 .promotion-price-preview > div:last-child { border-bottom: 0; }

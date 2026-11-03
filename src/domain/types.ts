@@ -271,6 +271,7 @@ export interface MenuItem {
   product_type: ProductType;
   price_minor: number;
   list_price_minor?: number;
+  promotion_rate?: number;
   currency: Currency;
   cover_asset_id: string | null;
   available_stock: number | null;

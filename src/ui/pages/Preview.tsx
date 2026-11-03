@@ -104,7 +104,7 @@ export default function PreviewPage() {
               {/* 必须保留「（预览）」：预览画框要一眼能看出不是真实游客菜单，
                   否则截图/投屏时可能被当成顾客界面。CI 有断言守着这一点。 */}
               <div className="kiosk-hero-title">商品目录（预览）</div>
-              <div className="kiosk-hero-sub">共 {filtered.length} 件在售</div>
+              <div className="kiosk-hero-sub">共 {filtered.length} 件商品</div>
             </div>
           </div>
           <div className="kiosk-search">
@@ -114,20 +114,22 @@ export default function PreviewPage() {
             </svg>
             <input
               type="search"
-              placeholder="搜索商品名 / 分类"
+              aria-label="搜索商品名或分类"
+              placeholder="搜索商品"
               value={keyword}
               onChange={(e) => setKeyword(e.target.value)}
             />
           </div>
         </div>
-        <div className="chip-row">
-          <button className={`chip ${category === '' ? 'active' : ''}`} onClick={() => setCategory('')}>
+        <div className="chip-row kiosk-chips preview-categories">
+          <button className={`chip ${category === '' ? 'active' : ''}`} aria-pressed={category === ''} onClick={() => setCategory('')}>
             全部
           </button>
           {cats.data?.map((c) => (
             <button
               key={c.id}
               className={`chip ${category === c.id ? 'active' : ''}`}
+              aria-pressed={category === c.id}
               onClick={() => setCategory(c.id)}
             >
               {c.name}

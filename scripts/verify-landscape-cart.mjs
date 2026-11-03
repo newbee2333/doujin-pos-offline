@@ -93,9 +93,9 @@ try {
     assert.equal(await first.locator('.qty .value').innerText(), '1');
     assert.match(await cart.locator('.side-cart-total').innerText(), /25\.00/);
 
-    await page.getByPlaceholder('搜索商品名 / 分类').fill('午后');
+    await page.getByRole('searchbox', { name: '搜索商品名或分类' }).fill('午后');
     assert.equal(await cart.locator('.side-cart-item').count(), 1, 'filter does not hide selected items');
-    await page.getByPlaceholder('搜索商品名 / 分类').fill('');
+    await page.getByRole('searchbox', { name: '搜索商品名或分类' }).fill('');
     await line().getByRole('button', { name: '−', exact: true }).tap();
     assert.equal(await cart.locator('.side-cart-item').count(), 0, 'decrementing one to zero removes the line');
     assert.equal(await first.locator('.add-btn').count(), 1);

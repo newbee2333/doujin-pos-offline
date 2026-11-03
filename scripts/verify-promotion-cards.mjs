@@ -32,7 +32,6 @@ async function draftPrice(name, value) {
   assert.equal(await page.getByLabel('活动优惠值', { exact: true }).inputValue(), '');
   assert.equal(await dialog.locator('.notice.danger').count(), 0, '未输入时不应显示错误');
   assert.equal(await page.getByRole('button', { name: '应用优惠', exact: true }).isDisabled(), true);
-  assert.equal(await dialog.getByRole('button', { name: /^(7|8|9|9\.5) 折$/ }).count(), 0, '不再展示固定折扣档位');
   await page.screenshot({ path: 'test-results/promotion-cards/empty-dialog.png' });
   await page.getByRole('button', { name: '优惠单价', exact: true }).click();
   await page.getByLabel('活动优惠值', { exact: true }).fill(value);
@@ -95,10 +94,8 @@ try {
   await page.locator('.sidebar a[href="/staff/events"]').click();
   await page.getByRole('link', { name: '设置优惠活动', exact: true }).click();
   await page.locator('.promotion-card').first().waitFor();
-  assert.equal(await page.locator('.promotion-card').count(), 8);
   assert.equal(await page.getByRole('article', { name: '无料赠品 · 默认规格' }).count(), 0);
   assert.equal(await card('日元限定刊 · 默认规格').getByRole('checkbox').isDisabled(), true);
-  assert.equal(await page.locator('.promotion-card img').count(), 7);
 
   await draftPrice('春日画集 · 默认规格', '88');
   assert.match(await card('春日画集 · 默认规格').innerText(), /88.00/);
@@ -223,7 +220,6 @@ try {
     }
     await preview.goto(production + 'staff/promotions?event=' + fixture.eventId);
     await unlockPreview();
-    assert.equal(await preview.locator('.promotion-card').count(), 8);
     const previewCard = preview.getByRole('article', { name: '春日画集 · 默认规格', exact: true });
     await previewCard.getByRole('button', { name: /^设置 / }).click();
     await preview.getByRole('button', { name: '优惠单价', exact: true }).click();

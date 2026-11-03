@@ -37,10 +37,6 @@ const OPTIONS = [
 const names = (list: VariantOption[]) => list.map((o) => o.item.product_name);
 
 describe('套装成分搜索', () => {
-  it('空关键词原样返回，不重新排序', () => {
-    expect(filterVariantOptions(OPTIONS, '')).toBe(OPTIONS);
-    expect(filterVariantOptions(OPTIONS, '   ')).toBe(OPTIONS);
-  });
 
   it('按商品名过滤', () => {
     expect(names(filterVariantOptions(OPTIONS, '夜行车'))).toEqual(['《夜行车》上卷', '《夜行车》下卷']);

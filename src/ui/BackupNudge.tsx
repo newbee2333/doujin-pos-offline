@@ -21,5 +21,5 @@ export default function BackupNudge({ state }: { state: BackupState | null }) {
   else if (now - confirmed >= 24 * 60 * 60 * 1000) text = '距上次确认保存已超过 24 小时，请及时保存当前数据库。';
   else if (now - confirmed >= 2 * 60 * 60 * 1000) text = '距上次确认保存已超过 2 小时，建议保存当前数据库。';
   if (!text) return null;
-  return <div className="backup-reminder" role="status"><span aria-hidden="true">●</span><span>{text}{limited ? ' 当前为受限营业模式。' : ''}</span></div>;
+  return <div className="backup-reminder" role="status"><span>{text}{limited ? ' 当前为受限营业模式。' : ''}</span></div>;
 }

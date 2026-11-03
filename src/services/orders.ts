@@ -548,7 +548,6 @@ export async function staffDirectSale(input: StaffSaleInput): Promise<{ orderId:
   const plan = await buildOrderPlan(input.eventId, input.lines, { source: 'staff', manual: input.manual });
   checkExpectedQuote(plan, input);
   if (input.manual || input.lines.some(l => l.manual)) {
-    if (!input.adjustmentReason?.trim()) throw new DomainError('请填写人工调价原因');
     await authorizeAdjustment(adjustmentPin);
   }
   const method = await ex().readOne<{ id: string; name: string; type: PaymentMethodType; instruction: string | null; qr_asset_id: string | null }>(
@@ -1164,6 +1163,7 @@ export async function getKioskMenu(eventId: string): Promise<MenuItem[]> {
       category_name: r.category_name,
       product_type: r.product_type,
       price_minor: automaticUnit(r.product_type === 'gift' ? 0 : Number(r.event_price_minor ?? 0), rules.prices[r.variant_id]),
+      promotion_rate: rules.prices[r.variant_id]?.kind === 'rate' ? rules.prices[r.variant_id].value : undefined,
       list_price_minor: r.product_type === 'gift' ? 0 : Number(r.event_price_minor ?? 0),
       currency: event.currency,
       cover_asset_id: r.cover_asset_id,
