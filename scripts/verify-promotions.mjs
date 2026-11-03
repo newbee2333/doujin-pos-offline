@@ -46,10 +46,12 @@ try {
     return { eventId, variantId, cashId: cash.id };
   });
   await page.locator('.sidebar a[href="/staff/events"]').click();
-  await page.locator('.promotion-settings > summary').click();
+  await page.getByRole('link', { name: '设置优惠活动', exact: true }).click();
   await page.getByRole('button', { name: '选择当前结果' }).click();
+  await page.getByRole('button', { name: '批量设置优惠', exact: true }).click();
+  await page.getByRole('button', { name: '打折', exact: true }).click();
   await page.getByLabel('活动优惠值', { exact: true }).fill('8');
-  await page.getByRole('button', { name: '应用到所选商品' }).click();
+  await page.getByRole('button', { name: '应用优惠', exact: true }).click();
   await page.getByRole('button', { name: '添加满减档位' }).click();
   await page.getByLabel('满减门槛1').fill('150'); await page.getByLabel('满减金额1').fill('20');
   await page.getByRole('button', { name: '保存本场优惠' }).click();

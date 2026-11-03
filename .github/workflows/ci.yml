@@ -93,3 +93,4 @@ jobs:
           done
           node scripts/verify-warm-workspace.mjs
           node scripts/verify-promotions.mjs
+          node scripts/verify-promotion-cards.mjs

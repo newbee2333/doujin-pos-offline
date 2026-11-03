@@ -2314,10 +2314,90 @@ input:disabled, select:disabled, textarea:disabled { color: var(--ink-3); opacit
 .promotion-form { padding: 0; margin: 0; border: 0; min-width: 0; display: grid; gap: 14px; }
 .promotion-form .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 .promotion-form > .row > input, .promotion-form > .row > select { flex: 1 1 180px; width: auto; min-width: 0; }
-.promotion-products { max-height: 300px; overflow: auto; border: 1px solid var(--line); border-radius: var(--r-sm); }
-.promotion-product { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; padding: 10px 12px; border-bottom: 1px solid var(--line); }
-.promotion-product:last-child { border-bottom: 0; }
-.promotion-product .check { flex: 1 1 250px; }
+.promotion-entry { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 18px; }
+.promotion-entry h2, .promotion-entry p { margin: 0 0 8px; }
+.promotion-entry > .btn { flex: none; }
+.promotion-page { max-width: 1600px; margin-inline: auto; }
+.promotion-page .page-head h1 { margin: 0; }
+.promotion-page .page-head p { margin: 6px 0 0; }
+.promotion-page .page-head > .btn { margin-left: auto; }
+.promotion-workspace { gap: 20px; }
+.promotion-workspace-body { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 22px; align-items: start; }
+.promotion-catalog { min-width: 0; }
+.promotion-catalog-tools { display: flex; gap: 16px; align-items: center; }
+.promotion-catalog-tools > input { flex: 1; min-width: 0; }
+.promotion-catalog-tools .check { flex: none; white-space: nowrap; }
+.promotion-categories { padding-block: 14px; }
+.promotion-categories small { margin-left: 4px; font-size: var(--fs-caption); opacity: .8; }
+.promotion-selection-row { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; }
+.promotion-card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(165px, 1fr)); gap: 14px; }
+.promotion-card { position: relative; border: 1px solid var(--line); min-width: 0; padding: 8px; }
+.promotion-card .menu-card-info { width: 100%; padding: 0; border: 0; border-radius: var(--r-md); text-align: left; background: transparent; box-shadow: none; }
+.promotion-card .caption .name { font-size: var(--fs-small); }
+.promotion-card .menu-card-info:disabled { opacity: 1; }
+.promotion-pick { position: absolute; top: 8px; left: 8px; z-index: 1; width: 44px; height: 44px; display: grid; place-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); cursor: pointer; }
+.promotion-pick input { width: 22px; height: 22px; margin: 0; accent-color: var(--accent); }
+.promotion-card-tag { position: absolute; top: 18px; right: 14px; z-index: 1; padding: 4px 9px; border-radius: var(--r-full); background: var(--accent-fill); color: #fff; font-size: var(--fs-caption); font-weight: 600; pointer-events: none; }
+.promotion-card .promotion-card-price { display: grid; gap: 3px; text-align: left; width: 100%; border: 0; padding: 10px 5px 5px; background: transparent; min-height: 80px; }
+.promotion-card-price .price { font-size: var(--fs-lead); }
+.promotion-card-price small { font-size: 10px; color: var(--ink-3); font-weight: 500; }
+.promotion-original { min-height: 1.5em; }
+.promotion-card-scope { display: block; padding: 6px 5px 2px; border-top: 1px solid var(--line); color: var(--ink-3); }
+.promotion-empty { text-align: center; padding: 40px 20px; }
+.promotion-rules { display: grid; gap: 16px; margin: 0; padding: 20px; }
+.promotion-rules h2 { margin: 5px 0 8px; }
+.promotion-rules p { margin: 0; line-height: 1.6; }
+.promotion-rules .check { align-items: flex-start; line-height: 1.6; }
+.promotion-tier { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 44px; gap: 8px; align-items: end; }
+.promotion-tier label { display: grid; gap: 6px; min-width: 0; font-size: var(--fs-caption); }
+.promotion-tier input { width: 100%; min-width: 0; padding-inline: 8px; }
+.promotion-tier button { padding-inline: 4px; }
+.promotion-scope { display: grid; gap: 10px; padding: 12px; background: var(--surface-2); border-radius: var(--r-md); }
+.promotion-explanation { border-top: 1px solid var(--line); padding-top: 14px; }
+.promotion-explanation summary { cursor: pointer; }
+.promotion-explanation p { margin-top: 10px; }
+.promotion-save-bar { position: sticky; bottom: 0; z-index: 5; display: grid; gap: 12px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow-1); padding: 14px 18px max(14px, env(safe-area-inset-bottom)); }
+.promotion-batch { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.promotion-batch > div { display: grid; gap: 2px; margin-right: auto; }
+.promotion-save-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; border-top: 1px solid var(--line); padding-top: 12px; }
+.promotion-save-actions > .spacer { flex: 1; }
+.promotion-save-actions:only-child { border-top: 0; padding-top: 0; }
+.promotion-unsaved { color: var(--accent); }
+.promotion-price-dialog { width: min(540px, 96vw); }
+.promotion-price-dialog .modal-content { display: grid; gap: 16px; }
+.promotion-dialog-product { display: flex; align-items: center; gap: 16px; }
+.promotion-dialog-product > .thumb, .promotion-dialog-product > .thumb-placeholder { width: 80px; height: 80px; object-fit: contain; border-radius: var(--r-md); flex: none; }
+.promotion-dialog-product > div { min-width: 0; overflow-wrap: anywhere; }
+.promotion-dialog-product p { margin: 6px 0; }
+.promotion-price-method > button { flex: 1; }
+.promotion-quick-rates { display: flex; gap: 8px; flex-wrap: wrap; }
+.promotion-quick-rates > button { flex: 1; }
+.promotion-price-preview { max-height: 220px; overflow-y: auto; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-md); padding: 4px 14px; }
+.promotion-price-preview > div { display: flex; justify-content: space-between; gap: 16px; padding-block: 12px; border-bottom: 1px solid var(--line); }
+.promotion-price-preview > div:last-child { border-bottom: 0; }
+.promotion-price-preview > div > div { display: grid; gap: 4px; min-width: 0; overflow-wrap: anywhere; }
+.promotion-price-preview > div > div:last-child { text-align: right; flex: none; }
+@media (max-width: 1050px) {
+  .promotion-workspace-body { grid-template-columns: minmax(0, 1fr); }
+  .promotion-rules { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .promotion-rules > div:first-child, .promotion-explanation { grid-column: 1 / -1; }
+}
+@media (max-width: 600px) {
+  .promotion-card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .promotion-catalog-tools { flex-wrap: wrap; gap: 8px; }
+  .promotion-catalog-tools > input { flex-basis: 100%; }
+  .promotion-categories { gap: 6px; }
+  .promotion-card { padding: 6px; }
+  .promotion-card .caption .name { font-size: var(--fs-caption); }
+  .promotion-card-price .price { font-size: var(--fs-body); }
+  .promotion-pick { top: 6px; left: 6px; }
+  .promotion-card-tag { top: 56px; right: 10px; }
+  .promotion-rules { grid-template-columns: 1fr; }
+  .promotion-save-bar { padding: 12px; gap: 10px; }
+  .promotion-save-actions > [role='status'] { width: 100%; }
+  .promotion-batch > div { flex-basis: 100%; }
+  .promotion-save-actions > button { flex: 1; }
+}
 .pricing-dialog { width: min(760px, 96vw); }
 .pricing-dialog .modal-content { display: grid; gap: 16px; }
 .pricing-dialog fieldset { border: 1px solid var(--line); border-radius: var(--r-sm); padding: 12px; min-width: 0; display: grid; gap: 12px; }
