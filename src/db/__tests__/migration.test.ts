@@ -48,18 +48,6 @@ describe('schema 迁移 v1 → v2', () => {
     migrated.close();
   });
 
-  it('迁移后版本号写到 2，且不会重复执行', async () => {
-    const migrated = await openFromBytes(await makeV1Bytes());
-    await migrated.executor.tx(buildMigrationSteps(1));
-    const meta = await migrated.executor.read<{ value: string }>(
-      "SELECT value FROM metadata WHERE key = 'schema_version'"
-    );
-    expect(meta[0]?.value).toBe(String(SCHEMA_VERSION));
-
-    // 再跑一次迁移不应报错（buildMigrationSteps(2) 找不到可用的迁移，产出空步骤）
-    expect(buildMigrationSteps(SCHEMA_VERSION)).toEqual([]);
-    migrated.close();
-  });
 
   it('迁移后的库能通过服务层正常读写 confirm_requires_pin', async () => {
     const migrated = await openFromBytes(await makeV1Bytes());

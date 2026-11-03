@@ -38,6 +38,7 @@ export type MenuCardItem = Pick<
   | 'cover_asset_id'
   | 'price_minor'
   | 'list_price_minor'
+  | 'promotion_rate'
   | 'currency'
   | 'product_type'
   | 'available_stock'
@@ -130,7 +131,7 @@ export default function MenuCard({
             现在金额降到 16px、币种代码单独画小一档（10px），两个就能并排放下。
             币种仍然显示：¥ 同时是人民币和日元的符号，单看一个 ¥120.00 分不出是哪种。 */}
         <span className="price">
-          {item.list_price_minor !== undefined && item.list_price_minor > item.price_minor ? <del className="list-price">{formatAmountOnly(item.list_price_minor, item.currency)}</del> : null}
+          {item.list_price_minor !== undefined && item.list_price_minor > item.price_minor ? <div className="menu-promotion"><del className="list-price">{formatAmountOnly(item.list_price_minor, item.currency)}</del><span>{item.promotion_rate !== undefined ? (item.promotion_rate / 1000) + " 折" : "直降 " + formatAmountOnly(item.list_price_minor - item.price_minor, item.currency)}</span></div> : null}
           {formatAmountOnly(item.price_minor, item.currency)}
           <span className="cur">{item.currency}</span>
         </span>

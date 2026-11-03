@@ -67,10 +67,10 @@ describe('优惠业务与恢复', () => {
     expect((await getDashboard(eventId)).netSalesMinor).toBe(0); expect((await getProductRanking(eventId))[0].refund_order_count).toBe(1);
     const restored = await openFromBytes(db.exportBytes()); bindExecutor(restored.executor); await invariant(); restored.close(); bindExecutor(db.executor);
   });
-  it('游客不能提交人工优惠，人工调价必须有原因并通过PIN', async () => {
+  it('游客不能提交人工优惠，人工调价必须通过PIN', async () => {
     const lines = [{ variantId, quantity: 1, manual: { kind: 'price' as const, value: 4000 } }];
     await expect(createPendingOrder({ eventId, lines, plannedPaymentMethodId: cashId })).rejects.toThrow('游客');
-    await expect(staffDirectSale({ eventId, lines, paymentMethodId: cashId, adjustmentReason: '优惠', tenderedMinor: 4000 })).rejects.toThrow('密码');
+    await expect(staffDirectSale({ eventId, lines, paymentMethodId: cashId, tenderedMinor: 4000 })).rejects.toThrow('密码');
     for (let i = 0; i < 5; i++) await expect(authorizeAdjustment('9999')).rejects.toThrow('不正确');
     await expect(authorizeAdjustment('1234')).rejects.toThrow('一分钟');
     expect((await ex().readOne<{ count: number }>('SELECT COUNT(*) AS count FROM orders'))!.count).toBe(0);
@@ -90,7 +90,7 @@ describe('优惠业务与恢复', () => {
     await beginOrderAdjustment(orderId, 0);
     await expect(confirmPayment({ orderId, tenderedMinor: 13000 })).rejects.toThrow('调整');
     const original = pendingPriceLines((await getOrderDetail(orderId))!)[0];
-    const input = { orderId, version: 0, lines: [{ ...original, quantity: 2 }, { ...original, lineId: 'split', quantity: 1, manual: { kind: 'price' as const, value: 4000 } }], reason: '单件优惠', pin: '1234', operationId: 'adjust-once' };
+    const input = { orderId, version: 0, lines: [{ ...original, quantity: 2 }, { ...original, lineId: 'split', quantity: 1, manual: { kind: 'price' as const, value: 4000 } }], reason: '', pin: '1234', operationId: 'adjust-once' };
     await adjustPendingPrice(input); await adjustPendingPrice(input);
     expect((await getOrderDetail(orderId))!.order).toMatchObject({ total_minor: 12000, pricing_version: 1, pricing_editing: 0 });
     await invariant();

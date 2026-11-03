@@ -110,12 +110,13 @@ export default function KioskMenuPage() {
       <div className="kiosk-hero">
         <div className="kiosk-hero-top">
           <div className="kiosk-hero-head">
-            <div className="kiosk-hero-title">商品目录</div>
-            <div className="kiosk-hero-sub">共 {filtered.length} 件在售</div>
+            <h1 className="kiosk-hero-title">商品目录</h1>
+            <div className="kiosk-hero-sub">共 {filtered.length} 件商品</div>
           </div>
           <div className="chip-row kiosk-chips">
             <button
               className={`chip ${category === '' ? 'active' : ''}`}
+              aria-pressed={category === ''}
               onClick={() => setCategory('')}
             >
               全部
@@ -124,6 +125,7 @@ export default function KioskMenuPage() {
               <button
                 key={c.id}
                 className={`chip ${category === c.id ? 'active' : ''}`}
+                aria-pressed={category === c.id}
                 onClick={() => setCategory(c.id)}
               >
                 {c.name}
@@ -148,7 +150,8 @@ export default function KioskMenuPage() {
             </svg>
             <input
               type="search"
-              placeholder="搜索商品名 / 分类"
+              aria-label="搜索商品名或分类"
+              placeholder="搜索商品"
               value={keyword}
               onChange={(e) => setKeyword(e.target.value)}
             />

@@ -36,7 +36,6 @@ export async function adjustPendingPrice(input: { orderId: string; version: numb
   const { pin, ...payload } = input;
   const { hash, existing } = await beginIdempotent('order.adjustPrice', input.operationId, payload);
   if (existing) return;
-  if (!input.reason.trim()) throw new Error('请填写调价原因');
   const detail = await getOrderDetail(input.orderId);
   if (!detail || detail.order.status !== 'pending_payment') throw new Error('只有待付款订单可以调价');
   if (detail.order.pricing_version !== input.version || !detail.order.pricing_editing) throw new Error('订单已变化，请刷新后重新调整');

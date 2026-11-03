@@ -9,6 +9,8 @@ import { errorMessage, useApp } from '../../store';
 import { ErrorBox, PinPad, Spinner, useAsync } from '../components';
 import { QrPreview } from './KioskCheckout';
 import { acknowledgeOrderPrice } from '../../services/order-pricing';
+import type { Order } from '../../domain/types';
+import PendingPriceEditor from '../PendingPriceEditor';
 import { PriceSummary } from '../Pricing';
 
 export default function KioskOrderPage() {
@@ -21,6 +23,7 @@ export default function KioskOrderPage() {
   const setCurrentOrder = useApp((s) => s.setCurrentOrder);
   const showToast = useApp((s) => s.showToast);
 
+  const [adjustOrder, setAdjustOrder] = useState<Order | null>(null);
   const [pinMode, setPinMode] = useState(false);
   const [pinError, setPinError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -183,7 +186,7 @@ export default function KioskOrderPage() {
         </div>
 
         {order.status === 'pending_payment' ? (
-          !canManage ? (
+          (!canManage || pinMode) ? (
             <div className="card ord-staff">
               {pinMode ? (
                 <PinPad
@@ -206,7 +209,24 @@ export default function KioskOrderPage() {
             </div>
           ) : (
             <div className="card ord-staff">
-              <h2>摊主处理</h2>
+              <div className="row">
+                <h2>摊主处理</h2>
+                <span className="spacer" />
+                <button className="small" disabled={busy || (needsAcknowledgement && !order.pricing_editing)} onClick={() => {
+                  if (staffUnlocked) setAdjustOrder(order);
+                  else setPinMode(true);
+                }}>
+                  {order.pricing_editing ? '继续调价' : '改应收'}
+                </button>
+              </div>
+              {adjustOrder?.id === order.id && <PendingPriceEditor order={adjustOrder} onClose={() => {
+                setAdjustOrder(null);
+                detail.reload();
+              }} onDone={() => {
+                setAdjustOrder(null);
+                setTendered('');
+                detail.reload();
+              }} />}
               {order.total_minor > 0 ? (
                 <div className="col">
                   <label className="field">

@@ -46,7 +46,7 @@ export function AdjustmentEditor({ initialLines, initialManual, rules, currency,
   const [busy, setBusy] = useState(false);
   const security = useAsync(requiresAdjustmentPin, []);
   let quote: Quote | null = null, quoteError: string | null = null;
-  try { quote = priceOrder(lines, rules.tiers, manual); } catch (e) { quoteError = errorMessage(e); }
+  let effectiveManual = manual;
   const parseDiscount = (text: string, rate: boolean) => {
     if (rate) {
       if (!/^(?:10|[0-9])(?:\.\d{1,2})?$/.test(text.trim())) throw new Error('请输入 0 至 10 折，最多两位小数');
@@ -56,6 +56,10 @@ export function AdjustmentEditor({ initialLines, initialManual, rules, currency,
     }
     return parseAmountToMinor(text, currency);
   };
+  try {
+    if (orderValue.trim()) effectiveManual = { kind: orderKind, value: parseDiscount(orderValue, orderKind === "rate") };
+    quote = priceOrder(lines, rules.tiers, effectiveManual);
+  } catch (e) { quoteError = errorMessage(e); }
   function applyLine() {
     try {
       const original = lines.find(l => l.lineId === target);
@@ -70,15 +74,21 @@ export function AdjustmentEditor({ initialLines, initialManual, rules, currency,
       setLines(next); setManual(undefined); setOrderValue(''); setValue(''); setError(null);
     } catch (e) { setError(errorMessage(e)); }
   }
-  return <Modal title="人工优惠" onClose={busy ? undefined : onClose} className="pricing-dialog" actions={<>
+  return <Modal title="调整应收" onClose={busy ? undefined : onClose} className="pricing-dialog" actions={<>
     <button disabled={busy} onClick={onClose}>取消</button>
-    <button className="primary" disabled={busy || !quote || security.loading || !!security.error || !reason.trim() || (!!security.data && !/^\d{4,8}$/.test(pin))} onClick={async () => {
+    <button className="primary" disabled={busy || !quote || security.loading || !!security.error || (!!security.data && !/^\d{4,8}$/.test(pin))} onClick={async () => {
       setBusy(true); setError(null);
-      try { await onSave(lines, manual, reason.trim(), pin); } catch (e) { setError(errorMessage(e)); }
+      try { await onSave(lines, effectiveManual, reason.trim(), pin); } catch (e) { setError(errorMessage(e)); }
       finally { setBusy(false); }
     }}>{busy ? '保存中…' : '保存优惠'}</button>
   </>}>
-    <p className="small muted">仅在尚未付款时调整。单品改价不影响满减门槛；修改单品后，整单人工优惠需要重新设置。</p>
+    <fieldset><legend>整单改价</legend><div className="pricing-inputs">
+      <select aria-label="整单优惠方式" value={orderKind} onChange={e => setOrderKind(e.target.value as typeof orderKind)}><option value="total">设置最终应收</option><option value="rate">满减后再打折</option></select>
+      <input aria-label="整单优惠值" inputMode="decimal" placeholder={orderKind === 'rate' ? '如 9.5，表示九五折' : '输入最终应收金额'} value={orderValue} onChange={e => setOrderValue(e.target.value)} />
+    </div>{(manual || orderValue) && <button className="small" onClick={() => { setManual(undefined); setOrderValue(''); }}>取消整单人工优惠</button>}</fieldset>
+    <details>
+      <summary>按商品改价</summary>
+      <p className="small muted">单品改价不影响满减门槛，修改单品后需重新设置整单优惠。</p>
     <div className="pricing-lines">{lines.map(l => <div className="pricing-line" key={l.lineId}>
       <div><strong>{l.name}</strong><div className="small muted">{l.quantity} 件 · 活动单价 {formatMoney(l.autoUnit, currency)}{l.manual ? ` → ${formatMoney(adjustedUnit(l.autoUnit, l.manual), currency)}` : ''}</div></div>
       {l.manual && <button className="small" onClick={() => { setLines(lines.map(v => v.lineId === l.lineId ? { ...v, manual: undefined } : v)); setManual(undefined); }}>恢复活动价</button>}
@@ -90,14 +100,10 @@ export function AdjustmentEditor({ initialLines, initialManual, rules, currency,
         <label>{kind === 'rate' ? '折扣（8 表示八折）' : '每件优惠价'}<input aria-label="单品优惠值" inputMode="decimal" value={value} onChange={e => setValue(e.target.value)} /></label>
       </div><button onClick={applyLine}>应用单品优惠</button>
     </fieldset>
-    <fieldset><legend>整单优惠</legend><div className="pricing-inputs">
-      <select aria-label="整单优惠方式" value={orderKind} onChange={e => setOrderKind(e.target.value as typeof orderKind)}><option value="total">设置最终应收</option><option value="rate">满减后再打折</option></select>
-      <input aria-label="整单优惠值" inputMode="decimal" placeholder={orderKind === 'rate' ? '如 9.5，表示九五折' : '输入最终应收金额'} value={orderValue} onChange={e => setOrderValue(e.target.value)} />
-      <button onClick={() => { try { const next = { kind: orderKind, value: parseDiscount(orderValue, orderKind === 'rate') }; priceOrder(lines, rules.tiers, next); setManual(next); setError(null); } catch (e) { setError(errorMessage(e)); } }}>应用</button>
-    </div>{manual && <button className="small" onClick={() => { setManual(undefined); setOrderValue(''); }}>取消整单人工优惠</button>}</fieldset>
+    </details>
     <PriceSummary quote={quote} currency={currency} />
     <div className="row"><strong>最终应收</strong><span className="spacer"/><strong className="big-price">{quote ? formatMoney(quote.total, currency) : '请检查优惠'}</strong></div>
-    <label>调价原因<input value={reason} maxLength={200} onChange={e => setReason(e.target.value)} placeholder="例如：瑕疵品优惠、摊主特批" /></label>
+    <label>调价原因（选填）<input value={reason} maxLength={200} onChange={e => setReason(e.target.value)} placeholder="例如：瑕疵品优惠、摊主特批" /></label>
     {security.data && <label>输入后台密码确认<input aria-label="调价确认密码" type="password" inputMode="numeric" autoComplete="off" maxLength={8} value={pin} onChange={e => setPin(e.target.value.replace(/\D/g, ''))} /></label>}
     <ErrorBox message={error ?? quoteError ?? security.error} />
   </Modal>;

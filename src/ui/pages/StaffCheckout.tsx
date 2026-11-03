@@ -350,7 +350,6 @@ export default function StaffCheckoutPage() {
             <span className="strong">本次订单</span>
             <span className="badge">{totalUnits} 件</span>
             <span className="spacer" />
-            <button className="small" aria-label="人工优惠 / 调整应收" disabled={busy || !lines.length || !quote.data} onClick={() => setAdjusting(true)}>人工优惠</button>
             {lines.length ? (
               <button type="button" className="small ghost" onClick={() => { setLines([]); setManual(undefined); setAdjustmentPin(''); }} disabled={busy}>
                 清空
@@ -387,7 +386,8 @@ export default function StaffCheckoutPage() {
           <div className="side-panel-foot">
             <PriceSummary quote={quote.data} currency={currency} compact/>
             <div className="row">
-              <span className="strong">合计</span>
+              <span className="strong">应收</span>
+              <button className="small" aria-label="人工优惠 / 调整应收" disabled={busy || !lines.length || !quote.data} onClick={() => setAdjusting(true)}>改应收</button>
               <span className="spacer" />
               <span className="big-price total-price">{formatMoney(totalMinor, currency)}</span>
             </div>

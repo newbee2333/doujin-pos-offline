@@ -116,7 +116,7 @@ function PromotionForm({ data, eventId, currency, disabled }: {
           </div>}
         </section>
         <aside className="promotion-rules card" aria-label="满减设置">
-          <div><span className="eyebrow">整单活动</span><h2>满减</h2><p className="small muted">达到门槛后自动减免，和商品优惠一起生效。</p></div>
+          <div><h2>满减</h2><p className="small muted">达到门槛后自动减免，和商品优惠一起生效。</p></div>
           <label className="check"><input type="checkbox" checked={rules.eligible === null} onChange={e => setRules({ ...rules, eligible: e.target.checked ? null : [] })}/>全部非赠品商品参与</label>
           {rules.eligible !== null && <div className="promotion-scope"><strong className="small">已指定 {rules.eligible.length} 个规格</strong><button className="small" disabled={!selected.length} onClick={() => setRules({ ...rules, eligible: [...selected] })}>使用当前勾选商品</button><p className="tiny muted">先在左侧勾选，再点此按钮替换参与范围。</p></div>}
           {!tiers.length && <p className="small muted">尚未设置满减。例：满 150 减 20。</p>}

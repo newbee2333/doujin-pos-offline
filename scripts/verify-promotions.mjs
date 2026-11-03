@@ -62,11 +62,10 @@ try {
   for (let i = 0; i < 3; i++) await page.locator('.pos-cover').first().click();
   await until(() => page.locator('.total-price').last().innerText(), '¥100.00 CNY');
   await page.getByRole('button', { name: '人工优惠 / 调整应收' }).click();
+  await page.getByText('按商品改价', { exact: true }).click();
   await page.getByLabel('单品优惠值').fill('30');
   await page.getByRole('button', { name: '应用单品优惠' }).click();
   await page.getByLabel('整单优惠值').fill('75');
-  await page.locator('.pricing-inputs').last().getByRole('button', { name: '应用', exact: true }).click();
-  await page.getByPlaceholder('例如：瑕疵品优惠、摊主特批').fill('展会现场优惠');
   await page.getByLabel('调价确认密码').fill('1234');
   await page.getByRole('button', { name: '保存优惠' }).click();
   await page.getByRole('dialog').waitFor({ state: 'hidden' });
@@ -86,19 +85,17 @@ try {
   await page.getByRole('button', { name: '现金', exact: true }).click();
   await page.getByRole('button', { name: /提交订单/ }).click();
   await page.waitForURL('**/kiosk/order/*');
-  const orderId = page.url().split('/').pop();
-  await staff('staff/pending');
-  await page.getByRole('button', { name: '人工优惠 / 调整应收' }).click();
+  await page.getByRole('button', { name: /请摊主处理|改应收/ }).click();
+  for (const digit of ['1', '2', '3', '4']) await page.locator('.pin-keys .pin-digit').filter({ hasText: digit }).click();
+  await page.locator('.pin-actions button.primary').click();
+  await page.getByRole('button', { name: '改应收', exact: true }).click();
   await page.getByRole('checkbox', { name: /已核实顾客尚未付款/ }).check();
   await page.getByRole('button', { name: '开始调价' }).click();
   await page.getByLabel('整单优惠值').fill('0');
-  await page.locator('.pricing-inputs').last().getByRole('button', { name: '应用', exact: true }).click();
-  await page.getByPlaceholder('例如：瑕疵品优惠、摊主特批').fill('零元赠送');
   await page.getByLabel('调价确认密码').fill('1234');
   await page.getByRole('button', { name: '保存优惠' }).click();
   await page.getByRole('dialog').waitFor({ state: 'hidden' });
   assert.equal(await page.getByRole('button', { name: '确认发放', exact: true }).isDisabled(), true);
-  await page.goto(base + 'kiosk/order/' + orderId);
   await page.getByRole('heading', { name: '金额已调整，请重新核对' }).waitFor();
   assert.equal(await page.locator('.ord-qr').count(), 0);
   await page.getByRole('button', { name: /已核对 ¥0.00 CNY/ }).click();
@@ -107,7 +104,7 @@ try {
   await staff('staff/pending');
   await page.getByRole('button', { name: '确认发放', exact: true }).click();
   await page.getByText('当前没有待付款订单。', { exact: true }).waitFor();
-  console.log('OK 待付款调价、顾客重新确认、零元发放');
+  console.log('OK 付款页免填原因调价、顾客重新确认、零元发放');
 
   const checks = await page.evaluate(async () => {
     const { ex } = await import('/src/services/context.ts');
@@ -166,7 +163,6 @@ try {
     await until(() => offline.locator('.total-price').last().innerText(), '¥40.00 CNY');
     await offline.getByRole('button', { name: '人工优惠 / 调整应收' }).click();
     await offline.getByLabel('整单优惠值').fill('35');
-    await offline.locator('.pricing-inputs').last().getByRole('button', { name: '应用', exact: true }).click();
     await offline.getByPlaceholder('例如：瑕疵品优惠、摊主特批').fill('离线现场优惠');
     await offline.getByLabel('调价确认密码').fill('1234');
     await offline.getByRole('button', { name: '保存优惠' }).click();

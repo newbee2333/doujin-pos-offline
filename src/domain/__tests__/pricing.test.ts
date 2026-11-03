@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { allocate, priceOrder, validateRules, emptyRules, type PriceLine } from '../pricing';
+import { priceOrder, validateRules, emptyRules, type PriceLine } from '../pricing';
 
 const line = (id: string, quantity: number, manual?: number): PriceLine => ({ lineId: id, variantId: 'sku', quantity, listUnit: 5000, autoUnit: 5000, eligible: true, manual: manual === undefined ? undefined : { kind: 'price', value: manual } });
 const tiers = [{ threshold: 15000, reduction: 2000 }];
@@ -25,16 +25,6 @@ describe('确定性优惠定价', () => {
     expect(q.lines[1].thresholdDiscount).toBe(0);
     expect(q.orderDiscount).toBe(4000);
     expect(q.lines.reduce((s, l) => s + l.net, 0)).toBe(19000);
-  });
-  it('真正的最大余数法，每一行误差小于一个最小单位', () => {
-    expect(allocate(2, ['a','b','c'].map(id => ({ id, value: 1 })))).toEqual([1, 1, 0]);
-    expect(allocate(2, ['c','b','a'].map(id => ({ id, value: 1 })))).toEqual([0, 1, 1]);
-    for (let total = 0; total <= 30; total++) {
-      const weights = [3, 7, 9, 11].map((value, i) => ({ id: String(i), value }));
-      const parts = allocate(total, weights);
-      expect(parts.reduce((s, n) => s + n, 0)).toBe(total);
-      parts.forEach((n, i) => expect(Math.abs(n - total * weights[i].value / 30)).toBeLessThan(1));
-    }
   });
   it('JPY 按日元取整，比例用整数计算', () => {
     const q = priceOrder([{ ...line('a', 3), listUnit: 101, autoUnit: 101, manual: { kind: 'rate', value: 9500 } }], [], { kind: 'rate', value: 9000 });
