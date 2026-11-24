@@ -26,7 +26,7 @@ function readPalette(): LightPalette {
 function applyTheme(preference: ThemePreference, palette: LightPalette) {
   const dark = preference === 'dark' || (preference === 'system' && systemTheme.matches);
   document.documentElement.dataset.theme = dark ? 'dark' : palette === 'warm' ? 'warm' : 'light';
-  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#1b1e26' : palette === 'warm' ? '#fffdf8' : '#ffffff');
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#1b1e29' : palette === 'warm' ? '#fffdf8' : '#ffffff');
 }
 
 // Appearance belongs to this browser/device, independently of the business database.

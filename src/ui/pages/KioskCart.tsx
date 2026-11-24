@@ -1,16 +1,19 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { formatMoney } from '../../domain/money';
 import { getEvent } from '../../services/events';
 import { useApp } from '../../store';
-import { AssetImage, ErrorBox, QtyStepper, useAsync } from '../components';
+import { AssetImage, ConfirmDialog, ErrorBox, QtyStepper, useAsync } from '../components';
 import type { Currency } from '../../domain/types';
-import { PriceSummary, useCartQuote } from '../Pricing';
+import { PriceSummary, ThresholdProgress, useCartQuote } from '../Pricing';
 
 export default function KioskCartPage() {
   const navigate = useNavigate();
   const cart = useApp((s) => s.cart);
   const setCart = useApp((s) => s.setCart);
+  const clearCart = useApp((s) => s.clearCart);
   const eventId = useApp((s) => s.currentEventId);
+  const [clearing, setClearing] = useState(false);
   const event = useAsync(() => (eventId ? getEvent(eventId) : Promise.resolve(null)), [eventId]);
   const quote = useCartQuote(eventId, cart);
 
@@ -34,11 +37,18 @@ export default function KioskCartPage() {
           ‹ 继续选购
         </button>
         <span className="title">购物车</span>
+        <span className="spacer" />
+        <button className="small ghost" disabled={!cart.length} onClick={() => setClearing(true)}>
+          清空
+        </button>
       </div>
 
-      <div style={{ padding: '14px 18px 120px' }}>
+      <div className="content narrow" style={{ paddingBottom: 110 }}>
         {!cart.length ? (
-          <p className="muted">购物车是空的。</p>
+          <div className="card center">
+            <p className="muted">购物车还是空的</p>
+            <button onClick={() => navigate('/kiosk')}>继续选购</button>
+          </div>
         ) : (
           <div className="col">
             {cart.map((c, index) => (
@@ -49,9 +59,9 @@ export default function KioskCartPage() {
                     alt={c.productName}
                     className="cart-thumb"
                   />
-                  <div style={{ flex: 1, minWidth: 150 }}>
+                  <div style={{ flex: 1, minWidth: 120 }}>
                     <div className="strong">{c.productName}</div>
-                    <div className="small muted">{c.variantName}</div>
+                    {c.variantName !== '默认规格' ? <div className="small muted">{c.variantName}</div> : null}
                     <div className="small muted">
                       {formatMoney(quote.data?.lines[index]?.unit ?? c.priceMinor, currency)} × {c.quantity}
                     </div>
@@ -68,8 +78,9 @@ export default function KioskCartPage() {
             ))}
 
             <div className="card">
-              <PriceSummary quote={quote.data} currency={currency}/>
-              <ErrorBox message={quote.error}/>
+              <ThresholdProgress quote={quote.data} currency={currency} />
+              <PriceSummary quote={quote.data} currency={currency} />
+              <ErrorBox message={quote.error} />
               <div className="row">
                 <span className="strong">合计</span>
                 <span className="spacer" />
@@ -82,6 +93,20 @@ export default function KioskCartPage() {
           </div>
         )}
       </div>
+
+      {clearing ? (
+        <ConfirmDialog
+          title="清空购物车"
+          message="要移除购物车里的全部商品吗？"
+          confirmText="确认清空"
+          danger
+          onConfirm={() => {
+            clearCart();
+            setClearing(false);
+          }}
+          onCancel={() => setClearing(false)}
+        />
+      ) : null}
 
       <div className="cart-bar">
         <span className="strong">{formatMoney(totalMinor, currency)}</span>

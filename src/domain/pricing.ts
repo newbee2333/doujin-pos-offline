@@ -101,7 +101,7 @@ export function priceOrder(lines: PriceLine[], tiers: PromotionRules['tiers'], m
   const sum = (f: (l: PricedLine) => number) => result.reduce((s, l) => amount(s + f(l)), 0);
   const listTotal = sum(l => amount(l.listUnit * l.quantity));
   const subtotal = sum(l => l.subtotal);
-  const eligibleBase = sum(l => l.eligible ? amount(l.listUnit * l.quantity) : 0);
+  const eligibleBase = sum(l => l.eligible ? amount(l.autoUnit * l.quantity) : 0);
   const nominal = [...tiers].filter(t => eligibleBase >= t.threshold).sort((a, b) => b.threshold - a.threshold)[0]?.reduction ?? 0;
   const thresholdDiscount = Math.min(nominal, sum(l => l.eligible ? l.subtotal : 0));
   const thresholdParts = allocate(thresholdDiscount, result.map(l => ({ id: l.lineId, value: l.eligible ? l.subtotal : 0 })));

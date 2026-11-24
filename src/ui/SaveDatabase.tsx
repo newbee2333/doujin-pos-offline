@@ -76,6 +76,8 @@ export default function SaveDatabase({
     setError(null);
     try {
       await markConfirmedSaved();
+      setBytes(null);
+      setFile('');
       showToast('已确认保存');
       state.reload();
       onSaved?.();

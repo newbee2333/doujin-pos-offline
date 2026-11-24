@@ -41,7 +41,8 @@ export async function initializeStock(
 ): Promise<void> {
   if (!Number.isInteger(quantity) || quantity < 0) throw new DomainError('初始库存必须为非负整数');
   const opId = operationId ?? newId();
-  const { hash } = await beginIdempotent('inventory.initial', opId, { eventId, variantId, quantity });
+  const { hash, existing: idempotentResult } = await beginIdempotent('inventory.initial', opId, { eventId, variantId, quantity });
+  if (idempotentResult) return;
 
   const existing = await ex().readOne<{ c: number }>(
     "SELECT COUNT(*) AS c FROM inventory_transactions WHERE event_id = ? AND variant_id = ? AND type = 'initial'",
@@ -59,6 +60,20 @@ export async function initializeStock(
   }
 
   const steps: Step[] = [
+    {
+      t: 'assert',
+      sql: "SELECT COUNT(*) FROM inventory_transactions WHERE event_id = ? AND variant_id = ? AND type <> 'initial'",
+      params: [eventId, variantId],
+      equals: 0,
+      message: '该商品已初始化过库存，后续变更请使用盘点或补货'
+    },
+    {
+      t: 'assert',
+      sql: 'SELECT COALESCE((SELECT reserved_stock FROM inventory WHERE event_id = ? AND variant_id = ?), 0)',
+      params: [eventId, variantId],
+      equals: 0,
+      message: '该商品存在待付款预留库存，不能重写初始库存'
+    },
     {
       t: 'run',
       sql: `UPDATE inventory_transactions SET delta_physical = ? WHERE event_id = ? AND variant_id = ? AND type = 'initial'`,
@@ -102,13 +117,14 @@ export async function adjustStock(input: AdjustInput): Promise<{ before: number;
   if (!Number.isInteger(input.deltaPhysical) || input.deltaPhysical === 0) {
     throw new DomainError('调整数量必须为非零整数');
   }
+  const opId = input.operationId ?? newId();
+  const { hash, existing } = await beginIdempotent('inventory.adjust', opId, input);
+  if (existing) return existing as { before: number; after: number };
+
   const inv = await getInventory(input.eventId, input.variantId);
   if (!inv) throw new DomainError('该商品没有库存记录，请先设置初始库存');
   const before = inv.physical_stock;
   const after = before + input.deltaPhysical;
-
-  const opId = input.operationId ?? newId();
-  const { hash } = await beginIdempotent('inventory.adjust', opId, input);
 
   const steps: Step[] = [
     {
@@ -130,6 +146,11 @@ export async function adjustStock(input: AdjustInput): Promise<{ before: number;
       sql: 'UPDATE inventory SET physical_stock = physical_stock + ? WHERE event_id = ? AND variant_id = ?',
       params: [input.deltaPhysical, input.eventId, input.variantId],
       expectChanges: 1
+    },
+    {
+      t: 'one',
+      sql: 'SELECT physical_stock FROM inventory WHERE event_id = ? AND variant_id = ?',
+      params: [input.eventId, input.variantId]
     },
     {
       t: 'run',
@@ -157,8 +178,10 @@ export async function adjustStock(input: AdjustInput): Promise<{ before: number;
     }),
     idempotencyStep(opId, 'inventory.adjust', hash, { before, after })
   ];
-  await ex().tx(steps);
-  return { before, after };
+  const results = await ex().tx(steps);
+  const updated = results[3] as { physical_stock?: number } | null;
+  const actualAfter = updated?.physical_stock !== undefined ? Number(updated.physical_stock) : after;
+  return { before: actualAfter - input.deltaPhysical, after: actualAfter };
 }
 
 /** 对账：余额等于流水累计，预留等于待付款订单成分汇总。 */

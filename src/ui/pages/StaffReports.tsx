@@ -12,18 +12,17 @@ import {
   settleEvent
 } from '../../services/reports';
 import { getEvent } from '../../services/events';
-import { formatMoney } from '../../domain/money';
+import { formatMoney, parseAmountToMinor } from '../../domain/money';
 import { newId } from '../../domain/ids';
 import { errorMessage, useApp } from '../../store';
-import { ErrorBox, Field, Spinner, useAsync } from '../components';
-import type { Currency } from '../../domain/types';
+import { ErrorBox, Field, Modal, Spinner, useAsync } from '../components';
+import type { CashMovementType, Currency } from '../../domain/types';
 
 const MOVEMENT_LABEL: Record<string, string> = {
   opening: '备用金',
   deposit: '存入',
   withdrawal: '取出'
 };
-
 
 export default function StaffReportsPage() {
   const eventId = useApp((s) => s.currentEventId);
@@ -45,32 +44,48 @@ export default function StaffReportsPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const [movementModal, setMovementModal] = useState<{ kind: CashMovementType; title: string } | null>(null);
+  const [movementAmount, setMovementAmount] = useState('');
+  const [movementNote, setMovementNote] = useState('');
+  const [movementBusy, setMovementBusy] = useState(false);
+  const [movementError, setMovementError] = useState<string | null>(null);
+
   if (!eventId) return <ErrorBox message="请先选择展会" />;
   const currency: Currency = event.data?.currency ?? 'CNY';
   const statusLabel =
     event.data?.status === 'active' ? '进行中' : event.data?.status === 'closed' ? '已收摊' : '草稿';
 
-  /** 备用金 / 存入 / 取出共用一个入口，只是方向不同。 */
-  async function addMovement(kind: 'opening' | 'deposit' | 'withdrawal', title: string) {
-    const v = window.prompt(`${title}金额：`, '0');
-    if (v === null) return;
-    const n = Number(v);
-    if (!Number.isFinite(n)) {
-      showToast('金额格式不正确');
-      return;
-    }
+  function openMovement(kind: CashMovementType, title: string) {
+    setMovementModal({ kind, title });
+    setMovementAmount('');
+    setMovementNote('');
+    setMovementError(null);
+  }
+
+  async function submitMovement() {
+    if (!movementModal) return;
+    setMovementBusy(true);
+    setMovementError(null);
     try {
+      const amountMinor = parseAmountToMinor(movementAmount.trim(), currency);
+      if (amountMinor <= 0 && movementModal.kind !== 'opening') {
+        throw new Error('请输入大于 0 的金额');
+      }
       await addCashMovement(
         eventId!,
-        kind,
-        currency === 'CNY' ? Math.round(n * 100) : Math.round(n),
-        title,
+        movementModal.kind,
+        amountMinor,
+        movementNote.trim() || movementModal.title,
         newId()
       );
+      showToast(`已记录${movementModal.title}`);
+      setMovementModal(null);
       cash.reload();
       movements.reload();
     } catch (e) {
-      showToast(errorMessage(e));
+      setMovementError(errorMessage(e));
+    } finally {
+      setMovementBusy(false);
     }
   }
 
@@ -96,14 +111,48 @@ export default function StaffReportsPage() {
       <ErrorBox message={dash.error} />
       {dash.data ? (
         <section className="report-overview" aria-label="营业概览">
-          <div className="report-primary"><span className="eyebrow">本场净销售额</span><strong>{formatMoney(dash.data.netSalesMinor, currency)}</strong><span className="small muted">销售额减退款额，未扣成本</span></div>
-          <div className="report-orders"><span className="eyebrow">已完成订单</span><strong>{dash.data.counts.completed}<small> 笔</small></strong><span className="small muted">待付款 {dash.data.counts.pending_payment} · 已取消 {dash.data.counts.voided}</span><span className="tiny muted">已退款 {dash.data.counts.refunded} · 已纠错 {dash.data.counts.corrected}</span></div>
+          <div className="report-primary">
+            <span className="eyebrow">本场净销售额</span>
+            <strong>{formatMoney(dash.data.netSalesMinor, currency)}</strong>
+            <span className="small muted">销售额减退款额，未扣成本</span>
+          </div>
+          <div className="report-orders">
+            <span className="eyebrow">已完成订单</span>
+            <strong>
+              {dash.data.counts.completed}
+              <small> 笔</small>
+            </strong>
+            <span className="small muted">
+              待付款 {dash.data.counts.pending_payment} · 已取消 {dash.data.counts.voided}
+            </span>
+            <span className="tiny muted">
+              已退款 {dash.data.counts.refunded} · 已纠错 {dash.data.counts.corrected}
+            </span>
+          </div>
           <dl className="report-secondary">
-            <div><dt>销售额</dt><dd>{formatMoney(dash.data.salesMinor, currency)}</dd></div>
-            <div><dt>优惠合计</dt><dd>{formatMoney(dash.data.discountMinor, currency)}</dd></div>
-            <div><dt>退款额</dt><dd>{formatMoney(dash.data.refundMinor, currency)}</dd></div>
-            <div><dt>销量 / 赠品发放</dt><dd>{dash.data.unitsSold} / {dash.data.giftUnits}<small> 件</small></dd></div>
-            <div><dt>纠错额（审计）</dt><dd>{formatMoney(dash.data.correctionMinor, currency)}</dd></div>
+            <div>
+              <dt>销售额</dt>
+              <dd>{formatMoney(dash.data.salesMinor, currency)}</dd>
+            </div>
+            <div>
+              <dt>优惠合计</dt>
+              <dd>{formatMoney(dash.data.discountMinor, currency)}</dd>
+            </div>
+            <div>
+              <dt>退款额</dt>
+              <dd>{formatMoney(dash.data.refundMinor, currency)}</dd>
+            </div>
+            <div>
+              <dt>销量 / 赠品发放</dt>
+              <dd>
+                {dash.data.unitsSold} / {dash.data.giftUnits}
+                <small> 件</small>
+              </dd>
+            </div>
+            <div>
+              <dt>纠错额（审计）</dt>
+              <dd>{formatMoney(dash.data.correctionMinor, currency)}</dd>
+            </div>
           </dl>
         </section>
       ) : null}
@@ -124,7 +173,13 @@ export default function StaffReportsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {!ranking.loading && !ranking.error && !ranking.data?.length ? <tr><td colSpan={4} className="muted">本场还没有商品销售记录。</td></tr> : null}
+                  {!ranking.loading && !ranking.error && !ranking.data?.length ? (
+                    <tr>
+                      <td colSpan={4} className="muted">
+                        本场还没有商品销售记录。
+                      </td>
+                    </tr>
+                  ) : null}
                   {ranking.data?.map((r, i) => (
                     <tr key={i}>
                       <td>
@@ -240,8 +295,6 @@ export default function StaffReportsPage() {
           <ReportExport eventId={eventId} eventName={event.data?.name ?? '展会'} />
         </div>
 
-        {/* 收摊独立成右栏。它是「收摊时才走一遍」的流程，混在报表长表里
-            会被表格淹掉 —— 而这一步做错（盘点填错、忘了保存）当天就结算不了。 */}
         <aside className="side-panel">
           <div className="side-panel-head">
             <span className="strong">现金核对与收摊</span>
@@ -272,9 +325,7 @@ export default function StaffReportsPage() {
                   </div>
                   <div className="ledger-total">
                     <dt className="strong">理论钱箱</dt>
-                    <dd className="big-price total-price">
-                      {formatMoney(cash.data.expectedMinor, currency)}
-                    </dd>
+                    <dd className="big-price total-price">{formatMoney(cash.data.expectedMinor, currency)}</dd>
                   </div>
                 </dl>
 
@@ -284,7 +335,7 @@ export default function StaffReportsPage() {
                       value={actual}
                       onChange={(e) => setActual(e.target.value)}
                       placeholder={currency === 'CNY' ? '0.00' : '0'}
-                      inputMode="decimal"
+                      inputMode={currency === 'JPY' ? 'numeric' : 'decimal'}
                     />
                   </Field>
                   {!actual ? <div className="notice">尚未盘点，保存后会记录差额。</div> : null}
@@ -292,13 +343,13 @@ export default function StaffReportsPage() {
                     <input value={settleNote} onChange={(e) => setSettleNote(e.target.value)} />
                   </Field>
                   <div className="row tight">
-                    <button className="small" disabled={busy} onClick={() => addMovement('opening', '备用金')}>
+                    <button className="small" disabled={busy} onClick={() => openMovement('opening', '备用金')}>
                       设置备用金
                     </button>
-                    <button className="small" disabled={busy} onClick={() => addMovement('deposit', '存入')}>
+                    <button className="small" disabled={busy} onClick={() => openMovement('deposit', '存入')}>
                       存入
                     </button>
-                    <button className="small" disabled={busy} onClick={() => addMovement('withdrawal', '取出')}>
+                    <button className="small" disabled={busy} onClick={() => openMovement('withdrawal', '取出')}>
                       取出
                     </button>
                   </div>
@@ -310,9 +361,7 @@ export default function StaffReportsPage() {
                           <tbody>
                             {movements.data.map((m) => (
                               <tr key={m.id}>
-                                <td className="tiny">
-                                  {new Date(m.created_at).toLocaleString('zh-CN')}
-                                </td>
+                                <td className="tiny">{new Date(m.created_at).toLocaleString('zh-CN')}</td>
                                 <td>{m.reason ?? MOVEMENT_LABEL[m.type] ?? m.type}</td>
                                 <td className="num">{formatMoney(m.amount_minor, currency)}</td>
                               </tr>
@@ -339,10 +388,10 @@ export default function StaffReportsPage() {
                 setBusy(true);
                 setError(null);
                 try {
-                  const n = Number(actual || 0);
+                  const actualMinor = parseAmountToMinor(actual.trim() || '0', currency);
                   const res = await settleEvent(
                     eventId,
-                    currency === 'CNY' ? Math.round(n * 100) : Math.round(n),
+                    actualMinor,
                     settleNote || null,
                     newId()
                   );
@@ -362,6 +411,46 @@ export default function StaffReportsPage() {
           </div>
         </aside>
       </div>
+
+      {movementModal ? (
+        <Modal
+          title={`记录${movementModal.title}`}
+          onClose={movementBusy ? undefined : () => setMovementModal(null)}
+          actions={
+            <>
+              <button disabled={movementBusy} onClick={() => setMovementModal(null)}>
+                取消
+              </button>
+              <button className="primary" disabled={movementBusy || !movementAmount.trim()} onClick={submitMovement}>
+                {movementBusy ? <span className="spinner" /> : null}
+                确认记录
+              </button>
+            </>
+          }
+        >
+          <div className="col">
+            <Field label={`${movementModal.title}金额（${currency === 'CNY' ? '元' : '日元'}）`}>
+              <input
+                type="text"
+                inputMode={currency === 'JPY' ? 'numeric' : 'decimal'}
+                autoFocus
+                value={movementAmount}
+                onChange={(e) => setMovementAmount(e.target.value)}
+                placeholder={currency === 'CNY' ? '例如 200.00' : '例如 10000'}
+              />
+            </Field>
+            <Field label="说明（选填）">
+              <input
+                type="text"
+                value={movementNote}
+                onChange={(e) => setMovementNote(e.target.value)}
+                placeholder={`默认记录为「${movementModal.title}」`}
+              />
+            </Field>
+            <ErrorBox message={movementError} />
+          </div>
+        </Modal>
+      ) : null}
     </div>
   );
 }

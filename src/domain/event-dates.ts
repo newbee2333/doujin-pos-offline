@@ -11,18 +11,25 @@
 export const EVENT_DATE_MIN = '2020-01-01';
 export const EVENT_DATE_MAX = '2035-12-31';
 
+function isValidCalendarDate(value: string): boolean {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!m) return false;
+  const year = Number(m[1]);
+  const month = Number(m[2]);
+  const day = Number(m[3]);
+  const d = new Date(Date.UTC(year, month - 1, day));
+  return d.getUTCFullYear() === year && d.getUTCMonth() === month - 1 && d.getUTCDate() === day;
+}
+
 /** 返回错误信息；null 表示通过。 */
 export function validateEventDates(start: string | null, end: string | null): string | null {
   if (start && !end) return '填了开始日期，结束日期也要一起填';
   if (!start && end) return '填了结束日期，开始日期也要一起填';
   if (!start && !end) return null;
 
-  const shapeOk =
-    /^\d{4}-\d{2}-\d{2}$/.test(start!) &&
-    /^\d{4}-\d{2}-\d{2}$/.test(end!) &&
-    !Number.isNaN(Date.parse(start!)) &&
-    !Number.isNaN(Date.parse(end!));
-  if (!shapeOk) return '日期格式不正确，请用日期选择器重新选择';
+  if (!isValidCalendarDate(start!) || !isValidCalendarDate(end!)) {
+    return '日期格式不正确，请用日期选择器重新选择';
+  }
   if (start! < EVENT_DATE_MIN || end! > EVENT_DATE_MAX) {
     return `日期需要在 ${EVENT_DATE_MIN} 至 ${EVENT_DATE_MAX} 之间`;
   }

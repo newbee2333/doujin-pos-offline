@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   activateEvent,
@@ -55,7 +55,15 @@ export default function StaffEventsPage() {
         <span className="spacer" />
         <select
           value={currentId ?? ''}
-          onChange={(e) => setCurrentEvent(e.target.value || null)}
+          onChange={async (e) => {
+            const nextId = e.target.value || null;
+            setCurrentEvent(nextId);
+            try {
+              await setCurrentEventId(nextId);
+            } catch (err) {
+              showToast(errorMessage(err));
+            }
+          }}
           style={{ maxWidth: 260 }}
         >
           <option value="">选择展会</option>
@@ -197,6 +205,9 @@ function EventDetail({
 }) {
   const event = useAsync(() => getEvent(eventId), [eventId]);
   const navigate = useNavigate();
+  const setCurrentEvent = useApp((s) => s.setCurrentEvent);
+  const bumpDataVersion = useApp((s) => s.bumpDataVersion);
+  const methodQueueRef = useRef<Promise<void>>(Promise.resolve());
   const configs = useAsync(() => listEventConfigs(eventId), [eventId]);
   const methods = useAsync(() => listPaymentMethods(), []);
   const eventMethods = useAsync(() => getEventPaymentMethods(eventId), [eventId]);
@@ -297,9 +308,10 @@ function EventDetail({
   const cfgRows = configs.data ?? [];
 
   const enabledIds = cfgRows.filter((c) => c.enabled === 1).map((c) => c.variant_id);
+  const rosterIds = new Set(cfgRows.map((c) => c.variant_id));
   const notAdded = (products.data ?? []).flatMap((p) =>
     p.variants
-      .filter((v) => !enabledIds.includes(v.id) && (!categoryFilter || p.category_id === categoryFilter))
+      .filter((v) => !rosterIds.has(v.id) && (!categoryFilter || p.category_id === categoryFilter))
       .map((v) => ({
         ...v,
         pname: p.name,
@@ -401,6 +413,7 @@ function EventDetail({
     try {
       await fn();
       showToast(ok);
+      bumpDataVersion();
       event.reload();
       configs.reload();
       onChanged();
@@ -417,6 +430,7 @@ function EventDetail({
       {reopening ? <ReopenEventDialog eventId={eventId} name={ev.name} onClose={() => setReopening(false)} onDone={() => {
         setReopening(false);
         showToast('已重新打开');
+        bumpDataVersion();
         event.reload(); configs.reload(); onChanged(); setReady(null);
       }} /> : null}
       <div className="card" style={{ marginTop: 12 }}>
@@ -465,9 +479,22 @@ function EventDetail({
           <button
             className="danger"
             disabled={busy || ev.status !== 'draft'}
-            onClick={() => {
-              if (window.confirm('删除该草稿展会？已有业务数据的展会不能删除。'))
-                run(async () => deleteDraftEvent(eventId), '已删除');
+            onClick={async () => {
+              if (!window.confirm('删除该草稿展会？已有业务数据的展会不能删除。')) return;
+              setBusy(true);
+              setError(null);
+              try {
+                await deleteDraftEvent(eventId);
+                await setCurrentEventId(null);
+                setCurrentEvent(null);
+                bumpDataVersion();
+                showToast('已删除');
+                onChanged();
+              } catch (e) {
+                setError(errorMessage(e));
+              } finally {
+                setBusy(false);
+              }
             }}
           >
             删除
@@ -478,14 +505,33 @@ function EventDetail({
           <Field label="摊位号">
             <input
               defaultValue={ev.booth_number ?? ''}
-              onBlur={(e) => void updateEvent(eventId, { booth_number: e.target.value })}
+              onBlur={async (e) => {
+                try {
+                  await updateEvent(eventId, { booth_number: e.target.value.trim() || null });
+                  event.reload();
+                  bumpDataVersion();
+                } catch (err) {
+                  showToast(errorMessage(err));
+                }
+              }}
             />
           </Field>
           <Field label="币种">
             <select
               value={ev.currency}
               disabled={ev.status !== 'draft'}
-              onChange={(e) => void updateEvent(eventId, { currency: e.target.value as Currency })}
+              onChange={async (e) => {
+                const nextCurrency = e.target.value as Currency;
+                try {
+                  await updateEvent(eventId, { currency: nextCurrency });
+                  event.reload();
+                  configs.reload();
+                  onChanged();
+                  bumpDataVersion();
+                } catch (err) {
+                  showToast(errorMessage(err));
+                }
+              }}
             >
               <option value="CNY">人民币 / CNY</option>
               <option value="JPY">日元 / JPY</option>
@@ -742,20 +788,24 @@ function EventDetail({
                       <span className="badge">赠品 0</span>
                     ) : (
                       <input
+                        key={`${c.variant_id}:${currency}:${c.event_price_minor ?? 'null'}`}
                         type="text"
                         defaultValue={c.event_price_minor === null ? '' : minorToInput(c.event_price_minor, currency)}
                         placeholder={currency === 'CNY' ? '0.00' : '0'}
                         style={{ maxWidth: 120 }}
                         onBlur={async (e) => {
                           const raw = e.target.value.trim();
-                          if (!raw) {
-                            await updateConfig(eventId, c.variant_id, { event_price_minor: null });
-                            return;
-                          }
                           try {
+                            if (!raw) {
+                              await updateConfig(eventId, c.variant_id, { event_price_minor: null });
+                              configs.reload();
+                              return;
+                            }
                             const v = parseAmountToMinor(raw, currency);
                             await updateConfig(eventId, c.variant_id, { event_price_minor: v });
+                            configs.reload();
                           } catch (err) {
+                            e.target.value = c.event_price_minor === null ? '' : minorToInput(c.event_price_minor, currency);
                             showToast(errorMessage(err));
                           }
                         }}
@@ -774,7 +824,13 @@ function EventDetail({
                         aria-label={`${c.product_name} 初始库存`}
                         style={{ maxWidth: 90 }}
                         onBlur={async (e) => {
-                          const v = Number(e.target.value || 0);
+                          const raw = e.target.value.trim();
+                          if (raw === '') return;
+                          const v = Number(raw);
+                          if (!Number.isInteger(v) || v < 0) {
+                            showToast('初始库存必须为非负整数');
+                            return;
+                          }
                           try {
                             await initializeStock(eventId, c.variant_id, v);
                             configs.reload();
@@ -938,20 +994,27 @@ function EventDetail({
                   <input
                     type="checkbox"
                     checked={on}
-                    onChange={async (e) => {
+                    onChange={(e) => {
                       const value = e.target.checked;
-                      setMethodOn((s) => ({ ...s, [m.id]: value }));
-                      const ids = (eventMethods.data ?? []).map((x) => x.id);
-                      const next = value
-                        ? Array.from(new Set([...ids, m.id]))
-                        : ids.filter((i) => i !== m.id);
-                      try {
-                        await setEventPaymentMethods(eventId, next);
-                        eventMethods.reload();
-                      } catch (err) {
-                        setMethodOn((s) => ({ ...s, [m.id]: !value }));
-                        showToast(errorMessage(err));
-                      }
+                      setMethodOn((prev) => {
+                        const updated = { ...prev, [m.id]: value };
+                        const baseIds = new Set((eventMethods.data ?? []).map((x) => x.id));
+                        for (const [id, flag] of Object.entries(updated)) {
+                          if (flag) baseIds.add(id);
+                          else baseIds.delete(id);
+                        }
+                        const next = Array.from(baseIds);
+                        methodQueueRef.current = methodQueueRef.current.then(async () => {
+                          try {
+                            await setEventPaymentMethods(eventId, next);
+                            eventMethods.reload();
+                          } catch (err) {
+                            setMethodOn((s) => ({ ...s, [m.id]: !value }));
+                            showToast(errorMessage(err));
+                          }
+                        });
+                        return updated;
+                      });
                     }}
                   />
                   {m.name}

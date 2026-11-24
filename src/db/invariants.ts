@@ -28,7 +28,7 @@ export const INVARIANT_CHECKS: InvariantCheck[] = [
     sql: `SELECT COUNT(*) FROM order_items
           WHERE subtotal_minor <> unit_price_minor * quantity OR COALESCE(net_minor,subtotal_minor)>subtotal_minor
           OR (pricing_json IS NOT NULL AND (net_minor IS NULL
-            OR net_minor <> subtotal_minor - json_extract(pricing_json,'$.thresholdDiscount') - json_extract(pricing_json,'$.orderDiscount')))`
+            OR net_minor IS NOT (subtotal_minor - json_extract(pricing_json,'$.thresholdDiscount') - json_extract(pricing_json,'$.orderDiscount'))))`
   },
   {
     name: 'pricing_snapshots',

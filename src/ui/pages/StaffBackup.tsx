@@ -31,7 +31,7 @@ export default function StaffBackupPage() {
   const status = useAsync(() => db.status(), [busy]);
   const nudge = useAsync(() => previewNewDatabase(), [busy]);
 
-  if (showImport) return <SetupPage onDone={() => setShowImport(false)} />;
+  if (showImport) return <SetupPage onDone={() => setShowImport(false)} onCancel={() => setShowImport(false)} />;
 
   const savedAt = backup.data?.lastConfirmedSavedAt ?? null;
 
@@ -50,6 +50,7 @@ export default function StaffBackupPage() {
       st.setCurrentOrder(null);
       st.setCurrentEvent(await getCurrentEventId());
       st.lockStaff();
+      st.bumpDataVersion();
       showToast('已新建空数据库');
       setShowNew(false);
       navigate('/', { replace: true });

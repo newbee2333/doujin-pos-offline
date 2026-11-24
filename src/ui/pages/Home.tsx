@@ -68,11 +68,11 @@ export default function HomePage() {
           <button onClick={() => navigate('/preview')}>菜单预览与排序</button>
         </div>
         <div className="workspace-operation-bar">
-          <div><strong>{current.status === 'active' ? '营业操作' : current.status === 'closed' ? '收摊后操作' : '开场前准备'}</strong><span className="small muted">{current.status === 'active' ? '摊主收银，或将设备交给游客选购' : current.status === 'closed' ? '查看本场记录，或到展会配置重新打开' : '完善配置后，再到展会配置检查并开场'}</span></div>
+          <div><strong>{current.status === 'active' ? '营业操作' : current.status === 'closed' ? '收摊后操作' : '开场前准备'}</strong><span className="small muted">{current.status === 'active' ? '将设备交给游客选购，或在待付款中核对收款' : current.status === 'closed' ? '查看本场记录，或到展会配置重新打开' : '完善配置后，再到展会配置检查并开场'}</span></div>
         <div className="workspace-actions">
           {current.status === 'active' ? <>
-            <button className="primary" onClick={() => navigate('/staff/checkout')}>摊主收银</button>
-            <button onClick={() => confirmEnterKiosk(navigate)}>进入游客菜单</button>
+            <button className="primary" onClick={() => confirmEnterKiosk(navigate)}>进入游客菜单</button>
+            <button onClick={() => navigate('/staff/pending')}>处理待付款</button>
           </> : current.status === 'draft' ? <>
             <button className="primary" onClick={() => navigate('/staff/events')}>配置展会</button>
             <button onClick={() => navigate('/preview')}>预览菜单效果</button>
@@ -121,7 +121,7 @@ export default function HomePage() {
               <td>{order.status === 'pending_payment' ? <button className="small recent-order-action" onClick={() => navigate(`/staff/pending?order=${order.id}`)}>去收款</button> : <button className="small recent-order-action" onClick={() => navigate(`/staff/orders?order=${order.id}`)}>查看详情</button>}</td>
             </tr>)}</tbody>
           </table>
-        </div> : <div className="empty-panel"><p className="muted">本场还没有订单。{current.status === 'active' ? '从摊主收银或游客菜单开始接待。' : '开场后可在这里查看最近订单。'}</p></div>}
+        </div> : <div className="empty-panel"><p className="muted">本场还没有订单。{current.status === 'active' ? '进入游客菜单即可开始接待。' : '开场后可在这里查看最近订单。'}</p></div>}
       </section>
       <section className="workspace-switch" aria-label="切换展会">
         <div><h2>切换展会</h2><p className="tiny muted">选择当前查看与操作的展会</p></div>

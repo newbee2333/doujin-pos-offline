@@ -1,9 +1,9 @@
+import { useEffect, useRef, useState } from 'react';
 import type { CartItem } from '../store';
 import type { Currency } from '../domain/types';
 import { formatAmountOnly, formatMoney } from '../domain/money';
 import { AssetImage, QtyStepper } from './components';
-import { PriceSummary } from './Pricing';
-import type { Quote } from '../domain/pricing';
+import { PriceSummary, ThresholdProgress, type CartQuote } from './Pricing';
 
 /** The landscape menu shares the same cart and checkout as the compact layout. */
 export default function KioskSideCart({ cart, currency, onSetQty, onClear, onCheckout, preview = false, quote }: {
@@ -13,16 +13,33 @@ export default function KioskSideCart({ cart, currency, onSetQty, onClear, onChe
   onClear: () => void;
   onCheckout: () => void;
   preview?: boolean;
-  quote?: Quote | null;
+  quote?: CartQuote | null;
 }) {
   const count = cart.reduce((sum, item) => sum + item.quantity, 0);
   const total = quote?.total ?? cart.reduce((sum, item) => sum + item.quantity * item.priceMinor, 0);
+  const prevCount = useRef(count);
+  const [pop, setPop] = useState(false);
+
+  useEffect(() => {
+    if (count > prevCount.current) {
+      setPop(false);
+      const id = requestAnimationFrame(() => setPop(true));
+      const timer = window.setTimeout(() => setPop(false), 260);
+      prevCount.current = count;
+      return () => {
+        cancelAnimationFrame(id);
+        window.clearTimeout(timer);
+      };
+    }
+    prevCount.current = count;
+  }, [count]);
+
   return (
     <aside className="kiosk-side-cart" aria-labelledby="side-cart-title">
       <header className="side-cart-header">
         <div className="side-cart-title">
           <h2 id="side-cart-title">购物车</h2>
-          <span className="side-cart-count">{count} 件</span>
+          <span className={`side-cart-count${pop ? ' cart-pop' : ''}`}>{count} 件</span>
         </div>
         <button className="small ghost" disabled={!cart.length} onClick={onClear}>清空</button>
       </header>
@@ -58,7 +75,8 @@ export default function KioskSideCart({ cart, currency, onSetQty, onClear, onChe
       </div>
 
       <footer className="side-cart-footer">
-        <PriceSummary quote={quote} currency={currency} compact/>
+        <ThresholdProgress quote={quote} currency={currency} />
+        <PriceSummary quote={quote} currency={currency} compact />
         <div className="side-cart-total"><span>合计</span><strong>{formatMoney(total, currency)}</strong></div>
         <p className="tiny muted">{preview ? '预览购物车，不会生成订单' : '提交订单后才会占用库存'}</p>
         <button className="primary block" disabled={!cart.length || preview} onClick={onCheckout}>{preview ? '去结算（预览）' : '去结算'}</button>

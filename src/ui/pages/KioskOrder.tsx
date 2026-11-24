@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { formatMoney, minorToInput, parseAmountToMinor } from '../../domain/money';
 import { newId } from '../../domain/ids';
@@ -6,7 +6,8 @@ import { confirmPayment, getOrderDetail, voidOrder } from '../../services/orders
 import { listPaymentMethods, getEventPaymentMethods } from '../../services/events';
 import { verifyPin } from '../../services/system';
 import { errorMessage, useApp } from '../../store';
-import { ErrorBox, PinPad, Spinner, useAsync } from '../components';
+import { ConfirmDialog, ErrorBox, PinPad, Spinner, useAsync } from '../components';
+import CashTenderControl from '../CashTenderControl';
 import { QrPreview } from './KioskCheckout';
 import { acknowledgeOrderPrice } from '../../services/order-pricing';
 import type { Order } from '../../domain/types';
@@ -24,15 +25,29 @@ export default function KioskOrderPage() {
   const showToast = useApp((s) => s.showToast);
 
   const [adjustOrder, setAdjustOrder] = useState<Order | null>(null);
+  const [confirmVoid, setConfirmVoid] = useState(false);
   const [pinMode, setPinMode] = useState(false);
   const [pinError, setPinError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [methodId, setMethodId] = useState<string>('');
   const [tendered, setTendered] = useState('');
+  const lastAutoKeyRef = useRef('');
 
   const detail = useAsync(() => getOrderDetail(id), [id]);
-  useEffect(() => { const timer = window.setInterval(detail.reload, 1500); return () => window.clearInterval(timer); }, [id]);
+  const order = detail.data?.order;
+  const isPendingOrder = !order || order.status === 'pending_payment';
+  useEffect(() => {
+    if (!isPendingOrder) return;
+    const timer = window.setInterval(detail.reload, 1500);
+    return () => window.clearInterval(timer);
+  }, [id, isPendingOrder, detail.reload]);
+
+  // 离开游客付款页时强制重新锁定后台，防止通过返回手势把解锁状态带回游客菜单
+  useEffect(() => () => {
+    useApp.getState().lockStaff();
+  }, []);
+
   const eventId = detail.data?.order.event_id;
   const methods = useAsync(
     () => (eventId ? getEventPaymentMethods(eventId) : Promise.resolve([])),
@@ -40,29 +55,30 @@ export default function KioskOrderPage() {
   );
   const allMethods = useAsync(() => listPaymentMethods(), []);
 
-  // 下面两个提前 return 之前，必须先算出所有 hook 依赖的值并调用完所有 hook。
-  const order = detail.data?.order;
   const planned = order?.planned_payment_method_id ?? null;
-  const cashMethod = allMethods.data?.find((x) => x.id === (methodId || planned)) ?? null;
+  const selectedMethodId = methodId || planned || '';
+  const cashMethod = allMethods.data?.find((x) => x.id === selectedMethodId) ?? null;
 
-  // 这一单的确认要不要 PIN：按游客下单时选的支付方式决定（支付方式上有个开关）。
-  // 以 planned 为准而不是摊主中途改的方式——否则已放行的处理界面会中途被锁回去。
-  // 找不到对应方式时保守要求 PIN。
   const plannedMethod = planned ? allMethods.data?.find((x) => x.id === planned) : undefined;
   const needsPin = plannedMethod ? plannedMethod.confirm_requires_pin === 1 : true;
   const canManage = staffUnlocked || !needsPin;
 
-  // 现金实收默认填应付金额：选了现金且还没填，就预填；用户清空后会再次预填。
-  // ⚠️ 这个 effect 必须待在两个提前 return 之上。原来它在 return 之后：
-  //    首次渲染（loading）时没执行它、hook 数少一个；数据到达后第二次渲染多执行一个，
-  //    React 直接抛 "Rendered more hooks than during the previous render"，
-  //    整棵组件树卸载 → 游客提交订单后卡死在白屏。开发时不会报错，
-  //    只有真实走完「提交订单 → 跳到本页」才会暴露。
+  // 仅在订单/定价版本/金额/支付方式变化时自动回填现金实收，不干扰用户退格清空重输
+  const autoKey =
+    order && cashMethod?.type === 'cash' && order.total_minor > 0
+      ? `${order.id}:${order.pricing_version ?? 0}:${order.total_minor}:${cashMethod.id}`
+      : '';
   useEffect(() => {
-    if (order && cashMethod && order.total_minor > 0 && !tendered) {
+    if (!autoKey) {
+      lastAutoKeyRef.current = '';
+      if (order && order.total_minor === 0) setTendered('');
+      return;
+    }
+    if (lastAutoKeyRef.current !== autoKey && order) {
+      lastAutoKeyRef.current = autoKey;
       setTendered(minorToInput(order.total_minor, order.currency));
     }
-  }, [methodId, order, cashMethod, tendered]);
+  }, [autoKey, order]);
 
   if (detail.loading && !order) {
     return (
@@ -74,20 +90,21 @@ export default function KioskOrderPage() {
   if (!order) return <ErrorBox message="订单不存在或已不可访问" />;
 
   const currency = order.currency;
-  /** 有没有「收款码」那一块。零元单和已完成的单没有，此时不该摆两栏（右边会被推到一边）。 */
   const needsAcknowledgement = (order.customer_ack_version ?? 0) !== (order.pricing_version ?? 0);
   const priceBlocked = !!order.pricing_editing || needsAcknowledgement;
-  const showQr = order.status === 'pending_payment' && order.total_minor > 0 && !priceBlocked;
+  const hasQrImage = !!order.planned_qr_asset_id;
+  const showQr = order.status === 'pending_payment' && order.total_minor > 0 && !priceBlocked && hasQrImage;
 
   async function doConfirm() {
     setBusy(true);
     setError(null);
     try {
-      const m = allMethods.data?.find((x) => x.id === (methodId || planned));
+      const isPaidOrder = order!.total_minor > 0;
+      const m = isPaidOrder ? allMethods.data?.find((x) => x.id === (methodId || planned)) : null;
       await confirmPayment({
         orderId: order!.id,
-        paymentMethodId: methodId || null,
-        tenderedMinor: m?.type === 'cash' ? parseAmountToMinor(tendered, order!.currency) : null,
+        paymentMethodId: isPaidOrder ? (methodId || null) : null,
+        tenderedMinor: isPaidOrder && m?.type === 'cash' ? parseAmountToMinor(tendered, order!.currency) : null,
         expectedPricingVersion: order!.pricing_version ?? 0,
         operationId: newId()
       });
@@ -101,11 +118,11 @@ export default function KioskOrderPage() {
   }
 
   async function doVoid() {
-    if (!window.confirm('确认取消这笔未付款订单？请先核实确实没有收到款。')) return;
     setBusy(true);
     setError(null);
     try {
       await voidOrder(order!.id, '摊主核实未收款', newId());
+      setConfirmVoid(false);
       showToast('已取消');
       detail.reload();
     } catch (e) {
@@ -123,7 +140,7 @@ export default function KioskOrderPage() {
   }
 
   return (
-    <div className="kiosk">
+    <div className="kiosk kiosk-order">
       <div className="kiosk-header">
         <span className="title">
           {order.status === 'pending_payment' ? '请付款' : order.status === 'completed' ? '已完成' : '订单已结束'}
@@ -131,20 +148,61 @@ export default function KioskOrderPage() {
       </div>
 
       <div className={`content narrow kiosk-order-page${showQr ? ' has-qr' : ''}`}>
-        {order.status === 'pending_payment' && priceBlocked && <div className="card ord-price-warning" role="alert">
-          <h2>{order.pricing_editing ? '摊主正在调整金额，请暂时不要付款' : '金额已调整，请重新核对'}</h2>
-          <p>请向摊主确认新的应收金额。已经付款的，请出示实际付款记录。</p>
-          {!order.pricing_editing && <button className="primary" disabled={busy} onClick={async () => { setBusy(true); try { await acknowledgeOrderPrice(order.id, order.pricing_version ?? 0, 'kiosk'); setTendered(''); detail.reload(); } catch (e) { setError(errorMessage(e)); } finally { setBusy(false); } }}>已核对 {formatMoney(order.total_minor, currency)}，继续付款</button>}
-        </div>}
-        <div className="card center ord-no">
-          <div className="small muted">取货号</div>
-          <div className="order-no">#{order.human_readable_number}</div>
-          <div className="big-price" style={{ marginTop: 6 }}>
-            {formatMoney(order.total_minor, currency)}
+        {order.status === 'pending_payment' && priceBlocked && (
+          <div className="card ord-price-warning" role="alert">
+            <h2>{order.pricing_editing ? '摊主正在调整金额，请暂时不要付款' : '金额已调整，请重新核对'}</h2>
+            <p>请向摊主确认新的应收金额。已经付款的，请出示实际付款记录。</p>
+            {!order.pricing_editing && (
+              <button
+                className="primary"
+                disabled={busy}
+                onClick={async () => {
+                  setBusy(true);
+                  try {
+                    await acknowledgeOrderPrice(order.id, order.pricing_version ?? 0, 'kiosk');
+                    setTendered('');
+                    detail.reload();
+                  } catch (e) {
+                    setError(errorMessage(e));
+                  } finally {
+                    setBusy(false);
+                  }
+                }}
+              >
+                已核对 {formatMoney(order.total_minor, currency)}，继续付款
+              </button>
+            )}
           </div>
-          <div className="small muted" style={{ marginTop: 4 }}>
+        )}
+
+        <div
+          className={`card center ord-no ticket-card${
+            order.status === 'completed' ? ' is-completed' : order.status === 'voided' ? ' is-voided' : ''
+          }`}
+        >
+          <div className="ticket-kicker">
+            {order.status === 'completed'
+              ? '✓ 已收款 · 取货号'
+              : order.status === 'voided'
+                ? '已取消 · 取货号'
+                : '摊位领货券 · 取货号'}
+          </div>
+          <div className="order-no">#{order.human_readable_number}</div>
+          <div className="ticket-divider" aria-hidden="true" />
+          <div className="big-price">{formatMoney(order.total_minor, currency)}</div>
+          {order.status === 'pending_payment' && !hasQrImage && order.total_minor > 0 && order.planned_method_name_snapshot ? (
+            <div className="ticket-method-line">
+              <span className="badge">{order.planned_method_name_snapshot}</span>
+              {order.planned_instruction_snapshot ? (
+                <span className="small muted">{order.planned_instruction_snapshot}</span>
+              ) : null}
+            </div>
+          ) : null}
+          <div className="small muted" style={{ marginTop: 6 }}>
             {order.status === 'pending_payment'
-              ? priceBlocked ? '请先与摊主核对金额，暂时不要付款' : '请按上方金额付款，并出示给摊主核对'
+              ? priceBlocked
+                ? '请先与摊主核对金额，暂时不要付款'
+                : '请按上方金额付款，并出示此券给摊主核对'
               : order.status === 'completed'
                 ? '摊主已确认收款，感谢惠顾'
                 : order.status === 'voided'
@@ -178,7 +236,7 @@ export default function KioskOrderPage() {
               <div className="nowrap">{formatMoney(it.net_minor ?? it.subtotal_minor, currency)}</div>
             </div>
           ))}
-          <PriceSummary quote={order.pricing_json ? JSON.parse(order.pricing_json) : null} currency={currency}/>
+          <PriceSummary quote={order.pricing_json ? JSON.parse(order.pricing_json) : null} currency={currency} />
         </div>
 
         <div className="ord-err">
@@ -187,7 +245,7 @@ export default function KioskOrderPage() {
 
         {order.status === 'pending_payment' ? (
           (!canManage || pinMode) ? (
-            <div className="card ord-staff">
+            <div className="card ord-staff ord-staff-sep">
               {pinMode ? (
                 <PinPad
                   hint="摊主密码"
@@ -208,30 +266,45 @@ export default function KioskOrderPage() {
               )}
             </div>
           ) : (
-            <div className="card ord-staff">
+            <div className="card ord-staff ord-staff-sep">
               <div className="row">
                 <h2>摊主处理</h2>
                 <span className="spacer" />
-                <button className="small" disabled={busy || (needsAcknowledgement && !order.pricing_editing)} onClick={() => {
-                  if (staffUnlocked) setAdjustOrder(order);
-                  else setPinMode(true);
-                }}>
+                <button
+                  className="small"
+                  disabled={busy || (needsAcknowledgement && !order.pricing_editing)}
+                  onClick={() => {
+                    if (staffUnlocked) setAdjustOrder(order);
+                    else setPinMode(true);
+                  }}
+                >
                   {order.pricing_editing ? '继续调价' : '改应收'}
                 </button>
               </div>
-              {adjustOrder?.id === order.id && <PendingPriceEditor order={adjustOrder} onClose={() => {
-                setAdjustOrder(null);
-                detail.reload();
-              }} onDone={() => {
-                setAdjustOrder(null);
-                setTendered('');
-                detail.reload();
-              }} />}
+              {adjustOrder?.id === order.id && (
+                <PendingPriceEditor
+                  order={adjustOrder}
+                  onClose={() => {
+                    setAdjustOrder(null);
+                    detail.reload();
+                  }}
+                  onDone={() => {
+                    setAdjustOrder(null);
+                    setTendered('');
+                    detail.reload();
+                  }}
+                />
+              )}
               {order.total_minor > 0 ? (
                 <div className="col">
                   <label className="field">
                     <span>实际收款方式（可与游客选择不同）</span>
-                    <select value={methodId || planned || ''} onChange={(e) => setMethodId(e.target.value)}>
+                    <select value={selectedMethodId} onChange={(e) => setMethodId(e.target.value)}>
+                      {planned && !(methods.data ?? []).some((m) => m.id === planned) ? (
+                        <option value={planned}>
+                          {order.planned_method_name_snapshot ?? '原支付方式'}（已停用）
+                        </option>
+                      ) : null}
                       {(methods.data ?? []).map((m) => (
                         <option key={m.id} value={m.id}>
                           {m.name}
@@ -240,26 +313,13 @@ export default function KioskOrderPage() {
                     </select>
                   </label>
                   {cashMethod?.type === 'cash' ? (
-                    <label className="field">
-                      <span>
-                        实收金额（{currency === 'CNY' ? '元' : '日元'}）·{' '}
-                        <button
-                          type="button"
-                          className="small ghost"
-                          onClick={() =>
-                            order && setTendered(minorToInput(order.total_minor, order.currency))
-                          }
-                        >
-                          按应付金额
-                        </button>
-                      </span>
-                      <input
-                        type="text"
-                        value={tendered}
-                        onChange={(e) => setTendered(e.target.value)}
-                        placeholder={currency === 'CNY' ? '例如 30.00' : '例如 3000'}
-                      />
-                    </label>
+                    <CashTenderControl
+                      totalMinor={order.total_minor}
+                      currency={currency}
+                      value={tendered}
+                      disabled={busy}
+                      onChange={(next) => setTendered(next)}
+                    />
                   ) : null}
                 </div>
               ) : null}
@@ -269,7 +329,7 @@ export default function KioskOrderPage() {
                   {busy ? <span className="spinner" /> : null}
                   {order.total_minor > 0 ? '确认已收款' : '确认发放'}
                 </button>
-                <button className="danger" onClick={doVoid} disabled={busy}>
+                <button className="danger" onClick={() => setConfirmVoid(true)} disabled={busy}>
                   取消订单
                 </button>
                 <button
@@ -294,6 +354,18 @@ export default function KioskOrderPage() {
           </button>
         ) : null}
       </div>
+
+      {confirmVoid ? (
+        <ConfirmDialog
+          title="取消这笔订单？"
+          message={`确认取消订单 #${order.human_readable_number}？请先核实确实没有收到款，取消后将立即释放预留库存。`}
+          confirmText="确认取消"
+          danger
+          busy={busy}
+          onConfirm={doVoid}
+          onCancel={() => setConfirmVoid(false)}
+        />
+      ) : null}
     </div>
   );
 }

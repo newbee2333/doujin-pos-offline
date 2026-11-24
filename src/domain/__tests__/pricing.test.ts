@@ -16,9 +16,14 @@ describe('确定性优惠定价', () => {
     const quote = priceOrder([line('a', 3, 0)], tiers);
     expect(quote.eligibleBase).toBe(15000); expect(quote.thresholdDiscount).toBe(0); expect(quote.total).toBe(0);
   });
-  it('自动活动价不影响门槛，最高档不累加', () => {
+  it('满减门槛按活动折后价计算，最高档不累加', () => {
     const q = priceOrder([{ ...line('a', 4), autoUnit: 4000 }], [...tiers, { threshold: 20000, reduction: 3000 }]);
-    expect(q.total).toBe(13000); expect(q.thresholdDiscount).toBe(3000);
+    expect(q.eligibleBase).toBe(16000); expect(q.thresholdDiscount).toBe(2000); expect(q.total).toBe(14000);
+    // 原价 120 打 7 折为 84，单件未达满 100 减 20；两件 168 才触发减 20
+    const cd1 = priceOrder([{ ...line('cd', 1), listUnit: 12000, autoUnit: 8400 }], [{ threshold: 10000, reduction: 2000 }]);
+    expect(cd1.eligibleBase).toBe(8400); expect(cd1.thresholdDiscount).toBe(0); expect(cd1.total).toBe(8400);
+    const cd2 = priceOrder([{ ...line('cd', 2), listUnit: 12000, autoUnit: 8400 }], [{ threshold: 10000, reduction: 2000 }]);
+    expect(cd2.eligibleBase).toBe(16800); expect(cd2.thresholdDiscount).toBe(2000); expect(cd2.total).toBe(14800);
   });
   it('不参与的商品不分摊满减，整单优惠在满减后单独分摊', () => {
     const q = priceOrder([line('yes', 3), { ...line('no', 2), eligible: false }], tiers, { kind: 'total', value: 19000 });

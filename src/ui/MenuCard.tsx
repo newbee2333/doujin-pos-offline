@@ -30,7 +30,7 @@ import { stockLabel, type MenuItem } from '../domain/types';
  * （分类名、库存、限购）。MenuItem 结构上是它的超集，所以
  * 游客菜单与菜单预览传 MenuItem 依然合法，一行都不用改。
  */
-export type MenuCardItem = Pick<
+export type MenuCardItem = { purchase_limit?: number | null } & Pick<
   MenuItem,
   | 'product_name'
   | 'variant_name'
@@ -45,6 +45,16 @@ export type MenuCardItem = Pick<
   | 'show_exact_stock'
   | 'low_stock_threshold'
 >;
+
+export function effectiveItemMax(
+  item: Pick<MenuItem, 'product_type' | 'available_stock'> & { purchase_limit?: number | null }
+): number | null {
+  const stockCap = item.product_type === 'non_stock' ? null : (item.available_stock ?? 0);
+  const limitCap = item.purchase_limit ?? null;
+  if (stockCap === null) return limitCap;
+  if (limitCap === null) return stockCap;
+  return Math.min(stockCap, limitCap);
+}
 
 export default function MenuCard({
   item,
@@ -72,7 +82,7 @@ export default function MenuCard({
   const picker = !!onPick;
   const label = stockLabel(item);
   const soldOut = !picker && label === '售罄';
-  const max = item.product_type === 'non_stock' ? null : item.available_stock;
+  const max = effectiveItemMax(item);
 
   // 只在「会影响购买决策」的状态下显示标签。
   // 「有货」是默认状态，标在每张卡上只是噪音，还会压住封面顶部的书名区。
@@ -102,7 +112,7 @@ export default function MenuCard({
     .join(' · ');
 
   return (
-    <div className={`menu-card menu-card-cover ${soldOut ? 'sold-out' : ''} ${selected ? 'picked' : ''}`}>
+    <div className={`menu-card menu-card-cover ${soldOut ? 'sold-out' : ''} ${selected ? 'picked' : ''} ${!picker && inCartQty > 0 ? 'in-cart' : ''}`}>
       <button
         type="button"
         className="menu-card-info"
@@ -111,7 +121,7 @@ export default function MenuCard({
         aria-pressed={picker ? selected : undefined}
       >
         <span className="thumb-wrap">
-          <AssetImage assetId={item.cover_asset_id} alt={item.product_name} />
+          <AssetImage assetId={item.cover_asset_id} alt={item.product_name} categoryName={item.category_name} />
           {tag ? <span className={`stock-tag ${tag.kind}`}>{tag.text}</span> : null}
           {soldOut ? (
             <span className="sold-veil">

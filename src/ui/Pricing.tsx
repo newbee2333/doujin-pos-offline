@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { newId } from '../domain/ids';
-import { formatMoney, parseAmountToMinor } from '../domain/money';
+import { formatMoney, minorToInput, parseAmountToMinor } from '../domain/money';
 import { adjustedUnit, priceOrder, type OrderAdjustment, type PriceLine, type PromotionRules, type Quote } from '../domain/pricing';
 import type { Currency } from '../domain/types';
 import { quoteCart, requiresAdjustmentPin, type QuoteInputLine } from '../services/promotions';
@@ -14,9 +14,11 @@ export function useCartQuote(eventId: string | null, lines: QuoteInputLine[], ma
 }
 export function PriceSummary({ quote, currency, compact = false }: { quote: Quote | null | undefined; currency: Currency; compact?: boolean }) {
   if (!quote || !quote.discount) return null;
-  if (compact) return <div className="price-summary compact" title={`满减 ${formatMoney(quote.thresholdDiscount, currency)}；整单人工优惠 ${formatMoney(quote.orderDiscount, currency)}`}><div className="strong"><span>共优惠</span><span>{formatMoney(quote.discount, currency)}</span></div></div>;
+  const itemDiscount = Math.max(0, quote.listTotal - quote.subtotal);
+  if (compact) return <div className="price-summary compact" title={`商品优惠 ${formatMoney(itemDiscount, currency)}；满减 ${formatMoney(quote.thresholdDiscount, currency)}；整单人工优惠 ${formatMoney(quote.orderDiscount, currency)}`}><div className="strong"><span>共优惠</span><span>{formatMoney(quote.discount, currency)}</span></div></div>;
   return <div className={`price-summary ${compact ? 'compact' : ''}`}>
     {!compact && <div><span>本场原价合计</span><span>{formatMoney(quote.listTotal, currency)}</span></div>}
+    {!!itemDiscount && <div><span>商品优惠</span><span>−{formatMoney(itemDiscount, currency)}</span></div>}
     {!!quote.thresholdDiscount && <div><span>满减优惠</span><span>−{formatMoney(quote.thresholdDiscount, currency)}</span></div>}
     {!!quote.orderDiscount && <div><span>整单人工优惠</span><span>−{formatMoney(quote.orderDiscount, currency)}</span></div>}
     <div className="strong"><span>共优惠</span><span>{formatMoney(quote.discount, currency)}</span></div>
@@ -24,29 +26,98 @@ export function PriceSummary({ quote, currency, compact = false }: { quote: Quot
 }
 export function PromotionHint({ rules, currency }: { rules?: PromotionRules; currency: Currency }) {
   if (!rules?.tiers.length) return null;
-  return <p className="promotion-hint small">{rules.tiers.map(t => `满 ${formatMoney(t.threshold, currency)} 减 ${formatMoney(t.reduction, currency)}`).join('；')} · 按参与商品本场原价计算，取最高一档</p>;
+  return <p className="promotion-hint small">{rules.tiers.map(t => `满 ${formatMoney(t.threshold, currency)} 减 ${formatMoney(t.reduction, currency)}`).join('；')} · 按参与商品活动折后价计算，取最高一档</p>;
+}
+
+export interface ThresholdStatus {
+  reached: boolean;
+  text: string;
+  compactText: string;
+  percent: number;
+}
+
+export type CartQuote = Quote & { rules?: PromotionRules };
+
+/** 计算当前购物车距离满减档位的实时进度，供侧栏、购物车页和底部条共用。 */
+export function getThresholdStatus(
+  quote: CartQuote | null | undefined,
+  currency: Currency,
+  rulesOverride?: PromotionRules
+): ThresholdStatus | null {
+  const tiers = rulesOverride?.tiers ?? quote?.rules?.tiers;
+  if (!quote || !tiers?.length) return null;
+  const sorted = [...tiers].sort((a, b) => a.threshold - b.threshold);
+  const base = quote.eligibleBase;
+  const reached = [...sorted].filter((t) => base >= t.threshold).pop() ?? null;
+  const next = sorted.find((t) => base < t.threshold) ?? null;
+
+  if (!reached && next) {
+    const gap = Math.max(0, next.threshold - base);
+    const percent = Math.min(100, Math.round((base / next.threshold) * 100));
+    const text = `再凑 ${formatMoney(gap, currency)} 可享满 ${formatMoney(next.threshold, currency)} 减 ${formatMoney(next.reduction, currency)}`;
+    return { reached: false, text, compactText: `再凑 ${formatMoney(gap, currency)} 减 ${formatMoney(next.reduction, currency)}`, percent };
+  }
+  if (reached && next) {
+    const gap = Math.max(0, next.threshold - base);
+    const percent = Math.min(100, Math.round((base / next.threshold) * 100));
+    const saved = formatMoney(quote.thresholdDiscount, currency);
+    const text = `已享满减 −${saved}，再凑 ${formatMoney(gap, currency)} 可减 ${formatMoney(next.reduction, currency)}`;
+    return { reached: true, text, compactText: `已减 ${saved} · 再凑 ${formatMoney(gap, currency)} 减 ${formatMoney(next.reduction, currency)}`, percent };
+  }
+  if (reached) {
+    const saved = formatMoney(quote.thresholdDiscount, currency);
+    return { reached: true, text: `已享最高满减 −${saved}`, compactText: `已享满减 −${saved}`, percent: 100 };
+  }
+  return null;
+}
+
+export function ThresholdProgress({
+  quote,
+  currency,
+  rules
+}: {
+  quote: CartQuote | null | undefined;
+  currency: Currency;
+  rules?: PromotionRules;
+}) {
+  const status = getThresholdStatus(quote, currency, rules);
+  if (!status) return null;
+  return (
+    <div className={`threshold-progress${status.reached ? ' reached' : ''}`} role="status">
+      <strong>{status.text}</strong>
+      <div className="threshold-bar" aria-hidden="true">
+        <span style={{ width: `${status.percent}%` }} />
+      </div>
+    </div>
+  );
 }
 export interface EditablePriceLine extends PriceLine { name: string; sourceItemId?: string }
-export function AdjustmentEditor({ initialLines, initialManual, rules, currency, onClose, onSave }: {
+export function AdjustmentEditor({ initialLines, initialManual, rules, currency, closing = false, onClose, onSave }: {
   initialLines: EditablePriceLine[]; initialManual?: OrderAdjustment; rules: PromotionRules; currency: Currency;
+  closing?: boolean;
   onClose: () => void;
   onSave: (lines: EditablePriceLine[], manual: OrderAdjustment | undefined, reason: string, pin: string) => Promise<void>;
 }) {
   const [lines, setLines] = useState(initialLines);
-  const [manual, setManual] = useState(initialManual);
   const [target, setTarget] = useState(initialLines[0]?.lineId ?? '');
   const [quantity, setQuantity] = useState('1');
   const [kind, setKind] = useState<'price' | 'rate'>('price');
   const [value, setValue] = useState('');
-  const [orderKind, setOrderKind] = useState<'total' | 'rate'>('total');
-  const [orderValue, setOrderValue] = useState('');
+  const [orderKind, setOrderKind] = useState<'total' | 'rate'>(() => initialManual?.kind ?? 'total');
+  const [orderValue, setOrderValue] = useState(() =>
+    initialManual
+      ? initialManual.kind === 'rate'
+        ? String(initialManual.value / 1000)
+        : minorToInput(initialManual.value, currency)
+      : ''
+  );
   const [reason, setReason] = useState('');
   const [pin, setPin] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const security = useAsync(requiresAdjustmentPin, []);
   let quote: Quote | null = null, quoteError: string | null = null;
-  let effectiveManual = manual;
+  let effectiveManual: OrderAdjustment | undefined = undefined;
   const parseDiscount = (text: string, rate: boolean) => {
     if (rate) {
       if (!/^(?:10|[0-9])(?:\.\d{1,2})?$/.test(text.trim())) throw new Error('请输入 0 至 10 折，最多两位小数');
@@ -71,12 +142,13 @@ export function AdjustmentEditor({ initialLines, initialManual, rules, currency,
       const changed = { ...original, quantity: qty, manual: adjustment };
       const next = qty === original.quantity ? lines.map(l => l.lineId === target ? changed : l)
         : lines.flatMap(l => l.lineId === target ? [{ ...l, quantity: l.quantity - qty }, { ...changed, lineId: newId(), sourceItemId: original.sourceItemId ?? original.lineId }] : [l]);
-      setLines(next); setManual(undefined); setOrderValue(''); setValue(''); setError(null);
+      setLines(next); setOrderValue(''); setValue(''); setError(null);
     } catch (e) { setError(errorMessage(e)); }
   }
-  return <Modal title="调整应收" onClose={busy ? undefined : onClose} className="pricing-dialog" actions={<>
-    <button disabled={busy} onClick={onClose}>取消</button>
-    <button className="primary" disabled={busy || !quote || security.loading || !!security.error || (!!security.data && !/^\d{4,8}$/.test(pin))} onClick={async () => {
+  const locked = busy || closing;
+  return <Modal title="调整应收" onClose={locked ? undefined : onClose} className="pricing-dialog" actions={<>
+    <button disabled={locked} onClick={onClose}>取消</button>
+    <button className="primary" disabled={locked || !quote || security.loading || !!security.error || (!!security.data && !/^\d{4,8}$/.test(pin))} onClick={async () => {
       setBusy(true); setError(null);
       try { await onSave(lines, effectiveManual, reason.trim(), pin); } catch (e) { setError(errorMessage(e)); }
       finally { setBusy(false); }
@@ -85,13 +157,13 @@ export function AdjustmentEditor({ initialLines, initialManual, rules, currency,
     <fieldset><legend>整单改价</legend><div className="pricing-inputs">
       <select aria-label="整单优惠方式" value={orderKind} onChange={e => setOrderKind(e.target.value as typeof orderKind)}><option value="total">设置最终应收</option><option value="rate">满减后再打折</option></select>
       <input aria-label="整单优惠值" inputMode="decimal" placeholder={orderKind === 'rate' ? '如 9.5，表示九五折' : '输入最终应收金额'} value={orderValue} onChange={e => setOrderValue(e.target.value)} />
-    </div>{(manual || orderValue) && <button className="small" onClick={() => { setManual(undefined); setOrderValue(''); }}>取消整单人工优惠</button>}</fieldset>
+    </div>{orderValue.trim() && <button className="small" onClick={() => setOrderValue('')}>取消整单人工优惠</button>}</fieldset>
     <details>
       <summary>按商品改价</summary>
       <p className="small muted">单品改价不影响满减门槛，修改单品后需重新设置整单优惠。</p>
     <div className="pricing-lines">{lines.map(l => <div className="pricing-line" key={l.lineId}>
       <div><strong>{l.name}</strong><div className="small muted">{l.quantity} 件 · 活动单价 {formatMoney(l.autoUnit, currency)}{l.manual ? ` → ${formatMoney(adjustedUnit(l.autoUnit, l.manual), currency)}` : ''}</div></div>
-      {l.manual && <button className="small" onClick={() => { setLines(lines.map(v => v.lineId === l.lineId ? { ...v, manual: undefined } : v)); setManual(undefined); }}>恢复活动价</button>}
+      {l.manual && <button className="small" onClick={() => { setLines(lines.map(v => v.lineId === l.lineId ? { ...v, manual: undefined } : v)); setOrderValue(''); }}>恢复活动价</button>}
     </div>)}</div>
     <fieldset><legend>单品优惠</legend>
       <label>选择明细<select aria-label="调价商品" value={target} onChange={e => { setTarget(e.target.value); setQuantity('1'); }}>{lines.map(l => <option key={l.lineId} value={l.lineId}>{l.name} ×{l.quantity}{l.manual ? '（已调价）' : ''}</option>)}</select></label>

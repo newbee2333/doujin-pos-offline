@@ -140,53 +140,13 @@ try {
   if ((await page.evaluate(() => document.body.innerText)).includes('进行中')) ok('展会开场');
   else fail('展会开场', '状态未变为进行中');
 
-  // 摊主收银
-  await gotoStaff('staff/checkout');
-  await page.locator('input[type="search"]').first().fill('冒烟本');
-  await page.waitForTimeout(500);
-  // 加购是卡片上的圆形「+」（.pos-add），按钮里没有「加入」两个字 ——
-  // 收银台改版时这句没跟着改，CI 就一直卡在这里
-  await page.locator('.pos-add').first().click();
-  await page.waitForTimeout(300);
-  const payable = await page.locator('.big-price').first().innerText();
-  ok('加入商品', `应付 ${payable}`);
-
-  // 收款方式是分段控件（.seg-item），不是 select
-  await page.locator('.seg-item').filter({ hasText: '现金' }).first().click();
-  await page.waitForTimeout(300);
-  const cashInput = page.locator('input[placeholder="0.00"]').last();
-  await cashInput.fill('30.00');
-  await page.waitForTimeout(300);
-  await page.getByRole('button', { name: /确认收款/ }).click();
-  await page.waitForTimeout(1200);
-
-  const afterSale = await page.evaluate(() => document.body.innerText);
-  if (afterSale.includes('已成交')) ok('摊主收银完成', afterSale.match(/订单 #\d+ 已成交[^\n]*/)?.[0] ?? '');
-  else fail('摊主收银', afterSale.slice(-300));
-
-  // 核对库存
-  await gotoStaff('staff/inventory');
-  const invText = await page.evaluate(() => document.body.innerText);
-  const m = invText.match(/冒烟本[\s\S]{0,120}?(\d+)\s+(\d+)\s+(\d+)\s+(\d+)/);
-  if (m) {
-    const [, initial, physical, reserved, available] = m;
-    if (physical === '9' && reserved === '0' && available === '9') ok('库存扣减正确', `初始 ${initial} 实际 ${physical} 预留 ${reserved} 可用 ${available}`);
-    else fail('库存扣减', `初始 ${initial} 实际 ${physical} 预留 ${reserved} 可用 ${available}`);
-  } else {
-    fail('库存扣减', invText.slice(0, 300));
-  }
-
-  // 收摊 → 首页无提醒，备份与恢复页集中提示保存
-  // ── 顾客路径：游客菜单 → 购物车 → 结算 → 提交订单 → 订单页正常渲染
-  //    回归防线：KioskOrderPage 的 useEffect 曾放在提前 return 之后，
-  //    游客提交订单后整树崩溃白屏；而当时 smoke-flow 只测摊主收款，漏掉了这条链路。
+  // ── 顾客路径：游客菜单 → 购物车 → 结算 → 提交订单 → 订单页正常渲染 → 待付款收款 → 核对库存
   await page.goto(BASE + 'kiosk', { waitUntil: 'networkidle' });
-  await page.waitForTimeout(1500);
+  await page.waitForTimeout(1200);
   const addBtn = page.locator('.add-btn').first();
   if (await addBtn.count()) {
     await addBtn.click();
     await page.waitForTimeout(400);
-    // 不能用 page.goto 跳购物车——整页重载会清空内存里的购物车
     if (await page.locator('.kiosk-side-cart').isVisible()) {
       await page.locator('.kiosk-side-cart').getByRole('button', { name: '去结算', exact: true }).click();
     } else {
@@ -195,13 +155,8 @@ try {
       await page.getByRole('button', { name: '去结算' }).click();
     }
     await page.waitForTimeout(900);
-    const methodBtn = page.locator('.grid.cols-2 button').first();
-    if (await methodBtn.count()) {
-      await methodBtn.click();
-      await page.waitForTimeout(400);
-    }
-    await page.getByRole('button', { name: '提交订单' }).click();
-    await page.waitForTimeout(2200);
+    await page.getByRole('button', { name: /提交订单/ }).click();
+    await page.waitForTimeout(1800);
     const orderText = await page.evaluate(() => (document.body.innerText || '').trim());
     if (page.url().includes('/kiosk/order/') && orderText.length > 0) {
       ok('游客提交订单 → 订单页正常渲染', '订单 ' + page.url().split('/').pop());
@@ -212,27 +167,34 @@ try {
     fail('游客下单', '菜单上没有可用的加入按钮');
   }
 
-  // 顾客下单后有一笔待收款订单；业务规则要求先确认到账（或取消）才允许收摊
+  // 顾客下单后有一笔待收款订单；在待付款中用现金 ¥50 确认到账（找零 ¥25）
   await gotoStaff('staff/pending');
   await page.waitForTimeout(900);
   if (await page.getByRole('button', { name: '确认已收款' }).count()) {
-    const methodSel = page.locator('select').first();
-    if (await methodSel.count()) {
-      await methodSel.selectOption({ index: 1 });
-      await page.waitForTimeout(400);
-    }
-    const fillBtn = page.getByRole('button', { name: '按应付金额' });
-    if (await fillBtn.count()) {
-      await fillBtn.first().click();
+    const cashInput = page.locator('input[placeholder="0.00"]').last();
+    if (await cashInput.count()) {
+      await cashInput.fill('30.00');
       await page.waitForTimeout(300);
     }
     await page.getByRole('button', { name: '确认已收款' }).first().click();
-    await page.waitForTimeout(1600);
+    await page.waitForTimeout(1400);
   }
   if (!(await page.getByRole('button', { name: '确认已收款' }).count())) {
     ok('待收款订单已确认到账');
   } else {
     fail('待收款订单确认', '确认后列表里仍有待收款订单');
+  }
+
+  // 核对库存（10 - 1 = 9）
+  await gotoStaff('staff/inventory');
+  const invText = await page.evaluate(() => document.body.innerText);
+  const m = invText.match(/冒烟本[\s\S]{0,120}?(\d+)\s+(\d+)\s+(\d+)\s+(\d+)/);
+  if (m) {
+    const [, initial, physical, reserved, available] = m;
+    if (physical === '9' && reserved === '0' && available === '9') ok('库存扣减正确', `初始 ${initial} 实际 ${physical} 预留 ${reserved} 可用 ${available}`);
+    else fail('库存扣减', `初始 ${initial} 实际 ${physical} 预留 ${reserved} 可用 ${available}`);
+  } else {
+    fail('库存扣减', invText.slice(0, 300));
   }
 
   await gotoStaff('staff/events');

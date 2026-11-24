@@ -1,15 +1,18 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { getEvent } from '../../services/events';
 import { getKioskMenu } from '../../services/orders';
 import { listCategories } from '../../services/catalog';
-import { getLandscapeCartEnabled } from '../../services/system';
+import { getBoothName, getLandscapeCartEnabled } from '../../services/system';
 import { formatMoney } from '../../domain/money';
 import { stockLabel, type MenuItem } from '../../domain/types';
 import { useApp } from '../../store';
-import { AssetImage, ErrorBox, Modal, Money, QtyStepper, Spinner, useAsync } from '../components';
-import MenuCard from '../MenuCard';
+import { ErrorBox, Modal, Spinner, useAsync } from '../components';
+import MenuCard, { effectiveItemMax } from '../MenuCard';
 import KioskSideCart from '../KioskSideCart';
-import { PromotionHint, useCartQuote } from '../Pricing';
+import KioskCatalogHeader from '../KioskCatalogHeader';
+import KioskItemDetailModal from '../KioskItemDetailModal';
+import { getThresholdStatus, PromotionHint, useCartQuote } from '../Pricing';
 
 export default function KioskMenuPage() {
   const navigate = useNavigate();
@@ -20,31 +23,92 @@ export default function KioskMenuPage() {
 
   const [category, setCategory] = useState<string>('');
   const [keyword, setKeyword] = useState('');
+  const [inStockOnly, setInStockOnly] = useState(false);
   const [detail, setDetail] = useState<MenuItem | null>(null);
   const [qty, setQty] = useState(1);
   const [clearing, setClearing] = useState(false);
+  const [pop, setPop] = useState(false);
 
+  const event = useAsync(() => (eventId ? getEvent(eventId) : Promise.resolve(null)), [eventId]);
+  const boothName = useAsync(getBoothName, []);
   const menu = useAsync(() => (eventId ? getKioskMenu(eventId) : Promise.resolve([])), [eventId]);
   const cats = useAsync(() => listCategories(false), []);
   const layout = useAsync(getLandscapeCartEnabled, []);
   const quote = useCartQuote(eventId, cart);
+
+  // 自动隐藏本场 0 商品的空分类，减少逛摊视觉噪音
+  const visibleCategories = useMemo(() => {
+    const used = new Set((menu.data ?? []).map((m) => m.category_id).filter(Boolean));
+    return (cats.data ?? []).filter((c) => used.has(c.id));
+  }, [cats.data, menu.data]);
+
+  // 选中分类若已变为 0 商品被隐藏，自动回退到「全部」
+  useEffect(() => {
+    if (!menu.loading && category && !visibleCategories.some((c) => c.id === category)) {
+      setCategory('');
+    }
+  }, [menu.loading, category, visibleCategories]);
+
+  // 菜单刷新后同步校准购物车里的单价、限购/库存上限，并自动移除已下架或已归档项
+  useEffect(() => {
+    if (menu.loading || !menu.data || !cart.length) return;
+    const byId = new Map(menu.data.map((m) => [m.variant_id, m]));
+    let changed = false;
+    const synced = cart.flatMap((c) => {
+      const m = byId.get(c.variantId);
+      if (!m) {
+        changed = true;
+        return [];
+      }
+      const cap = effectiveItemMax(m);
+      const nextQty = cap !== null && cap > 0 ? Math.min(c.quantity, cap) : c.quantity;
+      if (
+        c.maxAvailable !== cap ||
+        c.priceMinor !== m.price_minor ||
+        c.quantity !== nextQty ||
+        c.coverAssetId !== m.cover_asset_id
+      ) {
+        changed = true;
+        return [{ ...c, priceMinor: m.price_minor, maxAvailable: cap, quantity: nextQty, coverAssetId: m.cover_asset_id }];
+      }
+      return [c];
+    });
+    if (changed) setCart(synced);
+  }, [menu.loading, menu.data, cart, setCart]);
 
   const filtered = useMemo(() => {
     const list = menu.data ?? [];
     const kw = keyword.trim().toLowerCase();
     return list.filter((m) => {
       if (category && m.category_id !== category) return false;
+      if (inStockOnly && stockLabel(m) === '售罄') return false;
       if (kw) {
         const hay = `${m.product_name} ${m.variant_name} ${m.sku ?? ''} ${m.category_name ?? ''}`.toLowerCase();
         if (!hay.includes(kw)) return false;
       }
       return true;
     });
-  }, [menu.data, category, keyword]);
+  }, [menu.data, category, inStockOnly, keyword]);
 
   const totalQty = cart.reduce((a, c) => a + c.quantity, 0);
   const totalMinor = quote.data?.total ?? 0;
-  const currency = (menu.data?.[0]?.currency ?? 'CNY') as MenuItem['currency'];
+  const currency = (event.data?.currency ?? menu.data?.[0]?.currency ?? 'CNY') as MenuItem['currency'];
+  const threshold = getThresholdStatus(quote.data, currency);
+
+  const prevQty = useRef(totalQty);
+  useEffect(() => {
+    if (totalQty > prevQty.current) {
+      setPop(false);
+      const id = requestAnimationFrame(() => setPop(true));
+      const timer = window.setTimeout(() => setPop(false), 260);
+      prevQty.current = totalQty;
+      return () => {
+        cancelAnimationFrame(id);
+        window.clearTimeout(timer);
+      };
+    }
+    prevQty.current = totalQty;
+  }, [totalQty]);
 
   if (!eventId) {
     return (
@@ -68,22 +132,42 @@ export default function KioskMenuPage() {
     );
   }
 
-  function addToCart(item: MenuItem, quantity: number) {
+  function setItemInCart(item: MenuItem, targetQuantity: number) {
+    const cap = effectiveItemMax(item);
+    const clamped = cap !== null ? Math.min(targetQuantity, cap) : targetQuantity;
+    if (clamped <= 0) {
+      setCart(cart.filter((c) => c.variantId !== item.variant_id));
+      setDetail(null);
+      return;
+    }
     const next = [...cart];
     const idx = next.findIndex((c) => c.variantId === item.variant_id);
-    if (idx >= 0) next[idx] = { ...next[idx], quantity: next[idx].quantity + quantity };
-    else
+    if (idx >= 0) {
+      next[idx] = {
+        ...next[idx],
+        priceMinor: item.price_minor,
+        quantity: clamped,
+        maxAvailable: cap,
+        coverAssetId: item.cover_asset_id
+      };
+    } else {
       next.push({
         variantId: item.variant_id,
         productName: item.product_name,
         variantName: item.variant_name,
         priceMinor: item.price_minor,
-        quantity,
-        maxAvailable: item.available_stock,
+        quantity: clamped,
+        maxAvailable: cap,
         coverAssetId: item.cover_asset_id
       });
+    }
     setCart(next);
     setDetail(null);
+  }
+
+  function addToCart(item: MenuItem, quantity: number) {
+    const cur = cart.find((c) => c.variantId === item.variant_id)?.quantity ?? 0;
+    setItemInCart(item, cur + quantity);
   }
 
   function updateCartQty(variantId: string, quantity: number) {
@@ -91,168 +175,116 @@ export default function KioskMenuPage() {
       setCart(cart.filter((c) => c.variantId !== variantId));
       return;
     }
-    const item = menu.data?.find(item => item.variant_id === variantId);
+    const item = menu.data?.find((m) => m.variant_id === variantId);
+    const cap = item ? effectiveItemMax(item) : undefined;
     setCart(
-      cart.map((c) =>
-        c.variantId === variantId
-          ? { ...c, quantity, maxAvailable: item ? item.available_stock : c.maxAvailable }
-          : c
-      )
+      cart.map((c) => {
+        if (c.variantId !== variantId) return c;
+        const limit = cap !== undefined ? cap : c.maxAvailable;
+        const clamped = limit !== null ? Math.min(quantity, limit) : quantity;
+        return { ...c, quantity: clamped, maxAvailable: limit };
+      })
     );
   }
 
   return (
     <div className={`kiosk kiosk-menu${layout.data ? ' landscape-cart-enabled' : ''}`}>
-      {/* 页头只占一行：标题块 / 分类胶囊 / 搜索框 / 摊主处理。
-          分类原来自己占一整行、搜索框占满整行，两行加起来 145px；
-          合起来之后 68px，省下的正好是一整行商品 ——
-          iPad 上浏览器导航栏先吃掉一大块，这块空间值得抠。 */}
-      <div className="kiosk-hero">
-        <div className="kiosk-hero-top">
-          <div className="kiosk-hero-head">
-            <h1 className="kiosk-hero-title">商品目录</h1>
-            <div className="kiosk-hero-sub">共 {filtered.length} 件商品</div>
-          </div>
-          <div className="chip-row kiosk-chips">
-            <button
-              className={`chip ${category === '' ? 'active' : ''}`}
-              aria-pressed={category === ''}
-              onClick={() => setCategory('')}
-            >
-              全部
-            </button>
-            {cats.data?.map((c) => (
-              <button
-                key={c.id}
-                className={`chip ${category === c.id ? 'active' : ''}`}
-                aria-pressed={category === c.id}
-                onClick={() => setCategory(c.id)}
-              >
-                {c.name}
-              </button>
-            ))}
-          </div>
-          {/* 搜索框挪到分类胶囊右侧的那块空位上，宽度收到 200px。
-              游客是一边翻一边找，搜索是低频动作，不该占掉一整行。 */}
-          <div className="kiosk-search">
-            <svg
-              width="15"
-              height="15"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.2"
-              strokeLinecap="round"
-              aria-hidden="true"
-            >
-              <circle cx="11" cy="11" r="7" />
-              <path d="M20 20l-3.2-3.2" />
-            </svg>
-            <input
-              type="search"
-              aria-label="搜索商品名或分类"
-              placeholder="搜索商品"
-              value={keyword}
-              onChange={(e) => setKeyword(e.target.value)}
-            />
-          </div>
-          <button className="small ghost" onClick={() => navigate('/staff/pending')}>
-            摊主处理
-          </button>
-        </div>
-      </div>
+      <KioskCatalogHeader
+        boothName={boothName.data}
+        eventName={event.data?.name}
+        boothNumber={event.data?.booth_number}
+        itemCount={filtered.length}
+        categories={visibleCategories}
+        activeCategory={category}
+        onSelectCategory={setCategory}
+        inStockOnly={inStockOnly}
+        onToggleInStockOnly={() => setInStockOnly((v) => !v)}
+        keyword={keyword}
+        onKeywordChange={setKeyword}
+        onStaffClick={() => navigate('/staff/pending')}
+      />
 
-      <PromotionHint rules={quote.data?.rules} currency={currency}/>
-      <ErrorBox message={quote.error}/>
+      <PromotionHint rules={quote.data?.rules} currency={currency} />
+      <ErrorBox message={quote.error} />
       <div className="kiosk-menu-body">
-      <div className="menu-grid">
-        {filtered.map((item) => {
-          const label = stockLabel(item);
-          const soldOut = label === '售罄';
-          const inCart = cart.find((c) => c.variantId === item.variant_id);
-          const cartQty = inCart?.quantity ?? 0;
-          const max = item.product_type === 'non_stock' ? null : item.available_stock;
-          // 只在"会影响购买决策"的状态下显示标签。
-          // 「有货」是默认状态，标在每张卡上只是噪音，而且左上角会压住封面顶部的书名区。
-          // 摊主若开了「显示精确库存」，就把它放出来（这是摊主明确要的信息，优先于粗粒度标签）。
-          const stock = item.available_stock ?? 0;
-          const exact = item.show_exact_stock && item.product_type !== 'non_stock' && item.available_stock !== null;
-          const tag = soldOut
-            ? { text: '售罄', kind: 'danger' }
-            : exact
-              ? { text: `剩 ${stock}`, kind: stock <= item.low_stock_threshold ? 'warn' : 'flat' }
-              : label === '少量'
-                ? { text: '少量', kind: 'warn' }
-                : null;
-          return (
-            <MenuCard
-              key={item.variant_id}
-              item={item}
-              inCartQty={cartQty}
-              onAdd={() => addToCart(item, 1)}
-              onSetQty={(v) => updateCartQty(item.variant_id, v)}
-              onOpenDetail={() => {
-                if (soldOut) return;
-                setQty(Math.max(1, cartQty || 1));
-                setDetail(item);
-              }}
-            />
-          );
-        })}
-        {!filtered.length ? <p className="muted">没有找到商品。</p> : null}
-      </div>
-      <KioskSideCart cart={cart} currency={currency} quote={quote.data} onSetQty={updateCartQty} onClear={() => setClearing(true)} onCheckout={() => navigate('/kiosk/checkout')} />
+        <div className="menu-grid">
+          {filtered.map((item) => {
+            const label = stockLabel(item);
+            const soldOut = label === '售罄';
+            const inCart = cart.find((c) => c.variantId === item.variant_id);
+            const cartQty = inCart?.quantity ?? 0;
+            return (
+              <MenuCard
+                key={item.variant_id}
+                item={item}
+                inCartQty={cartQty}
+                onAdd={() => addToCart(item, 1)}
+                onSetQty={(v) => updateCartQty(item.variant_id, v)}
+                onOpenDetail={() => {
+                  if (soldOut) return;
+                  setQty(Math.max(1, cartQty || 1));
+                  setDetail(item);
+                }}
+              />
+            );
+          })}
+          {!filtered.length ? (
+            <div className="kiosk-empty">
+              <strong>{inStockOnly ? '当前筛选下暂无现货' : '没有找到商品'}</strong>
+              <p>{inStockOnly ? '可以关闭「仅看有货」查看全部商品。' : '试试其他关键词或分类。'}</p>
+            </div>
+          ) : null}
+        </div>
+        <KioskSideCart
+          cart={cart}
+          currency={currency}
+          quote={quote.data}
+          onSetQty={updateCartQty}
+          onClear={() => setClearing(true)}
+          onCheckout={() => navigate('/kiosk/checkout')}
+        />
       </div>
 
-      {clearing ? <Modal title="清空购物车" onClose={() => setClearing(false)} actions={<>
-        <button onClick={() => setClearing(false)}>取消</button>
-        <button className="danger" onClick={() => { clearCart(); setClearing(false); }}>确认清空</button>
-      </>}><p>要移除购物车里的全部商品吗？</p></Modal> : null}
-
-      {detail ? (
+      {clearing ? (
         <Modal
-          title={detail.product_name}
-          onClose={() => setDetail(null)}
+          title="清空购物车"
+          onClose={() => setClearing(false)}
           actions={
             <>
-              <button onClick={() => setDetail(null)}>关闭</button>
+              <button onClick={() => setClearing(false)}>取消</button>
               <button
-                className="primary"
-                onClick={() => addToCart(detail, qty)}
-                disabled={qty <= 0}
+                className="danger"
+                onClick={() => {
+                  clearCart();
+                  setClearing(false);
+                }}
               >
-                加入购物车
+                确认清空
               </button>
             </>
           }
         >
-          <div className="col">
-            {detail.cover_asset_id ? <AssetImage assetId={detail.cover_asset_id} alt={detail.product_name} /> : null}
-            {detail.description ? <p style={{ whiteSpace: 'pre-wrap' }}>{detail.description}</p> : null}
-            <div className="small muted">
-              {detail.variant_name}
-              {detail.sku ? ` · SKU ${detail.sku}` : ''}
-            </div>
-            <div className="row">
-              <Money minor={detail.price_minor} currency={detail.currency} big />
-              <span className="spacer" />
-              <QtyStepper
-                value={qty}
-                min={1}
-                max={detail.available_stock ?? (detail.product_type === 'non_stock' ? null : 0)}
-                onChange={setQty}
-              />
-            </div>
-            {detail.purchase_limit ? (
-              <div className="small muted">每单限购 {detail.purchase_limit} 件</div>
-            ) : null}
-          </div>
+          <p>要移除购物车里的全部商品吗？</p>
         </Modal>
       ) : null}
 
+      {detail ? (
+        <KioskItemDetailModal
+          item={detail}
+          qty={qty}
+          inCartQty={cart.find((c) => c.variantId === detail.variant_id)?.quantity ?? 0}
+          onQtyChange={setQty}
+          onClose={() => setDetail(null)}
+          onAdd={(q) => setItemInCart(detail, q)}
+        />
+      ) : null}
+
       <div className="cart-bar">
-        <span className="count">{totalQty}</span>
-        <span className="strong">{formatMoney(totalMinor, currency)}</span>
+        <span className={`count${pop ? ' cart-pop' : ''}`}>{totalQty}</span>
+        <div className="cart-bar-main">
+          <span className="strong">{formatMoney(totalMinor, currency)}</span>
+          {threshold ? <span className="cart-bar-nudge">{threshold.compactText}</span> : null}
+        </div>
         <span className="spacer" />
         <button onClick={() => navigate('/kiosk/cart')} disabled={!cart.length}>
           查看购物车

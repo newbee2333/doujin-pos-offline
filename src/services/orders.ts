@@ -103,7 +103,6 @@ export async function buildOrderPlan(
 
   if (!lines.length) throw new OrderValidationError(['购物车是空的']);
   if (opts.source === 'kiosk' && (opts.manual || lines.some(l => l.manual))) throw new DomainError('游客不能设置人工优惠');
-  const pricing = await quoteCart(eventId, lines, opts.manual);
   const issues: string[] = [];
   const priceChanges: { variantId: string; oldPrice: number; newPrice: number }[] = [];
 
@@ -126,24 +125,29 @@ export async function buildOrderPlan(
   const bundleIds = rows.filter((r) => r.product_type === 'bundle').map((r) => r.variant_id);
   const bundleMap = await getBundleComponentsBatch(bundleIds);
 
-  const items: ResolvedItem[] = [];
+  // 先做行级基础校验，避免已下架/已删除/数量异常的商品被 quoteCart 笼统报成「未设置本场价格」
+  let cannotQuote = false;
   for (const line of lines) {
     const ctx = ctxMap.get(line.variantId);
     if (!ctx) {
       issues.push('购物车里有已不存在的商品');
+      cannotQuote = true;
       continue;
     }
     const qty = line.quantity;
     if (!Number.isInteger(qty) || qty <= 0) {
       issues.push('商品数量必须为正整数');
+      cannotQuote = true;
       continue;
     }
     if (ctx.enabled !== 1) {
       issues.push(`「${ctx.product_name}」本场未上架`);
+      if (ctx.product_type !== 'gift' && ctx.event_price_minor === null) cannotQuote = true;
       continue;
     }
     if (ctx.product_archived === 1 || ctx.variant_archived === 1) {
       issues.push(`「${ctx.product_name}」已归档`);
+      if (ctx.product_type !== 'gift' && ctx.event_price_minor === null) cannotQuote = true;
       continue;
     }
     if (opts.source === 'kiosk') {
@@ -158,9 +162,23 @@ export async function buildOrderPlan(
     }
     if (ctx.product_type !== 'gift' && ctx.event_price_minor === null) {
       issues.push(`「${ctx.product_name}」未设置本场价格`);
+      cannotQuote = true;
       continue;
     }
-    const priced = pricing.lines[lines.indexOf(line)];
+  }
+  if (cannotQuote) throw new OrderValidationError(issues);
+
+  const pricing = await quoteCart(eventId, lines, opts.manual);
+
+  const items: ResolvedItem[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const ctx = ctxMap.get(line.variantId);
+    if (!ctx || ctx.enabled !== 1 || ctx.product_archived === 1 || ctx.variant_archived === 1) continue;
+    if (opts.source === 'kiosk' && (ctx.category_hidden === 1 || ctx.kiosk_visible !== 1)) continue;
+    if (ctx.product_type !== 'gift' && ctx.event_price_minor === null) continue;
+    const qty = line.quantity;
+    const priced = pricing.lines[i];
     const unitPrice = priced.unit;
     if (opts.expectedPrices && opts.expectedPrices[line.variantId] !== undefined) {
       const expected = opts.expectedPrices[line.variantId];
@@ -504,11 +522,15 @@ export async function createPendingOrder(input: CreatePendingInput): Promise<{ o
   let planned = { id: null as string | null, name: null as string | null, type: null as PaymentMethodType | null, instruction: null as string | null, qr: null as string | null };
   if (plan.totalMinor > 0) {
     if (!input.plannedPaymentMethodId) throw new DomainError('请选择支付方式');
-    const m = await ex().readOne<{ id: string; name: string; type: PaymentMethodType; instruction: string | null; qr_asset_id: string | null }>(
-      'SELECT id, name, type, instruction, qr_asset_id FROM payment_methods WHERE id = ?',
-      [input.plannedPaymentMethodId]
+    const m = await ex().readOne<{ id: string; name: string; type: PaymentMethodType; instruction: string | null; qr_asset_id: string | null; enabled: number; event_enabled: number | null }>(
+      `SELECT m.id, m.name, m.type, m.instruction, m.qr_asset_id, m.enabled, e.enabled AS event_enabled
+       FROM payment_methods m
+       LEFT JOIN event_payment_methods e ON e.payment_method_id = m.id AND e.event_id = ?
+       WHERE m.id = ?`,
+      [input.eventId, input.plannedPaymentMethodId]
     );
     if (!m) throw new DomainError('支付方式不存在');
+    if (m.enabled !== 1 || m.event_enabled !== 1) throw new DomainError('该支付方式本场未启用，请更换方式');
     if (m.type === 'qr_payment' && !m.qr_asset_id) throw new DomainError('该支付方式未上传收款码，请更换方式');
     planned = { id: m.id, name: m.name, type: m.type, instruction: m.instruction, qr: m.qr_asset_id };
   }
@@ -550,18 +572,24 @@ export async function staffDirectSale(input: StaffSaleInput): Promise<{ orderId:
   if (input.manual || input.lines.some(l => l.manual)) {
     await authorizeAdjustment(adjustmentPin);
   }
-  const method = await ex().readOne<{ id: string; name: string; type: PaymentMethodType; instruction: string | null; qr_asset_id: string | null }>(
-    'SELECT id, name, type, instruction, qr_asset_id FROM payment_methods WHERE id = ?',
-    [input.paymentMethodId]
+  const method = await ex().readOne<{ id: string; name: string; type: PaymentMethodType; instruction: string | null; qr_asset_id: string | null; enabled: number; event_enabled: number | null }>(
+    `SELECT m.id, m.name, m.type, m.instruction, m.qr_asset_id, m.enabled, e.enabled AS event_enabled
+     FROM payment_methods m
+     LEFT JOIN event_payment_methods e ON e.payment_method_id = m.id AND e.event_id = ?
+     WHERE m.id = ?`,
+    [input.eventId, input.paymentMethodId]
   );
   if (!method && plan.totalMinor > 0) throw new DomainError('支付方式不存在');
+  if (plan.totalMinor > 0 && (method!.enabled !== 1 || method!.event_enabled !== 1)) {
+    throw new DomainError('该支付方式本场未启用，请更换方式');
+  }
 
-  if (plan.totalMinor > 0) {
-    if (method!.type === 'cash') {
-      const tendered = input.tenderedMinor ?? null;
-      if (tendered === null) throw new DomainError('现金收款请填写实收金额');
-      if (tendered < plan.totalMinor) throw new DomainError('实收金额小于应付金额');
-    }
+  let cashTendered: number | null = null;
+  if (plan.totalMinor > 0 && method!.type === 'cash') {
+    const tendered = input.tenderedMinor ?? null;
+    if (tendered === null || !Number.isSafeInteger(tendered)) throw new DomainError('现金收款请填写有效实收金额');
+    if (tendered < plan.totalMinor) throw new DomainError('实收金额小于应付金额');
+    cashTendered = tendered;
   }
 
   const orderId = newId();
@@ -571,7 +599,7 @@ export async function staffDirectSale(input: StaffSaleInput): Promise<{ orderId:
     ...consumeSteps(plan, orderId, opId)
   ];
   if (plan.totalMinor > 0) {
-    steps.push(paymentStep(orderId, method!, plan.totalMinor, plan.currency, opId, input.tenderedMinor ?? null));
+    steps.push(paymentStep(orderId, method!, plan.totalMinor, plan.currency, opId, cashTendered));
   }
   steps.push(auditStep('order.staffSale', 'order', orderId, { total: plan.totalMinor, method: method?.name, pricing: plan.pricing, reason: input.adjustmentReason }));
   steps.push(idempotencyStep(opId, 'order.staffSale', hash, { orderId }));
@@ -601,6 +629,8 @@ export async function confirmPayment(input: ConfirmInput): Promise<void> {
   if (order.status !== 'pending_payment') throw new DomainError('只有待付款订单可以确认收款');
   if (order.pricing_editing || (order.customer_ack_version ?? 0) !== (order.pricing_version ?? 0)) throw new DomainError('金额正在调整或尚未重新确认，请先核对新金额');
   if ((input.expectedPricingVersion ?? 0) !== (order.pricing_version ?? 0)) throw new DomainError('订单金额已变化，请刷新并核对后再收款');
+  let confirmedMethod: { id: string; name: string; type: PaymentMethodType } | null = null;
+  let cashTendered: number | null = null;
   if (order.total_minor > 0) {
     const methodId = input.paymentMethodId ?? order.planned_payment_method_id;
     if (!methodId) throw new DomainError('请选择实际收款方式');
@@ -611,15 +641,20 @@ export async function confirmPayment(input: ConfirmInput): Promise<void> {
     if (!method) throw new DomainError('收款方式不存在');
     if (method.type === 'cash') {
       const tendered = input.tenderedMinor ?? null;
-      if (tendered === null) throw new DomainError('现金收款请填写实收金额');
+      if (tendered === null || !Number.isSafeInteger(tendered)) throw new DomainError('现金收款请填写有效实收金额');
       if (tendered < order.total_minor) throw new DomainError('实收金额小于应付金额');
+      cashTendered = tendered;
     }
+    confirmedMethod = method;
   }
 
-  const components = await ex().read<{ component_variant_id: string; quantity_total: number }>(
-    `SELECT c.component_variant_id, SUM(c.quantity_total) AS quantity_total
+  const components = await ex().read<{ component_variant_id: string; is_gift: number; quantity_total: number }>(
+    `SELECT c.component_variant_id,
+            CASE WHEN oi.product_type_snapshot = 'gift' THEN 1 ELSE 0 END AS is_gift,
+            SUM(c.quantity_total) AS quantity_total
      FROM order_inventory_components c JOIN order_items oi ON oi.id = c.order_item_id
-     WHERE oi.order_id = ? GROUP BY c.component_variant_id`,
+     WHERE oi.order_id = ?
+     GROUP BY c.component_variant_id, CASE WHEN oi.product_type_snapshot = 'gift' THEN 1 ELSE 0 END`,
     [order.id]
   );
 
@@ -642,29 +677,23 @@ export async function confirmPayment(input: ConfirmInput): Promise<void> {
       params: [qty, qty, order.event_id, c.component_variant_id, qty, qty],
       expectChanges: 1
     });
-    const isGift = await isGiftOrder(order.id);
     steps.push({
       t: 'run',
       sql: `INSERT INTO inventory_transactions (id, event_id, variant_id, delta_physical, delta_reserved, type, order_id, operation_id, reason, note, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?)`,
-      params: [newId(), order.event_id, c.component_variant_id, -qty, -qty, isGift ? 'gift' : 'sale', order.id, opId, nowIso()]
+      params: [newId(), order.event_id, c.component_variant_id, -qty, -qty, Number(c.is_gift) === 1 ? 'gift' : 'sale', order.id, opId, nowIso()]
     });
   }
 
-  if (order.total_minor > 0) {
-    const methodId = input.paymentMethodId ?? order.planned_payment_method_id;
-    const method = await ex().readOne<{ id: string; name: string; type: PaymentMethodType }>(
-      'SELECT id, name, type FROM payment_methods WHERE id = ?',
-      [methodId]
-    );
+  if (order.total_minor > 0 && confirmedMethod) {
     steps.push(
       paymentStep(
         order.id,
-        { id: method!.id, name: method!.name, type: method!.type },
+        confirmedMethod,
         order.total_minor,
         order.currency,
         opId,
-        input.tenderedMinor ?? null
+        cashTendered
       )
     );
   }
@@ -678,14 +707,6 @@ export async function confirmPayment(input: ConfirmInput): Promise<void> {
   steps.push(auditStep('order.confirm', 'order', order.id, { total: order.total_minor }));
   steps.push(idempotencyStep(opId, 'order.confirm', hash, { orderId: order.id }));
   await ex().tx(steps);
-}
-
-async function isGiftOrder(orderId: string): Promise<boolean> {
-  const row = await ex().readOne<{ c: number }>(
-    "SELECT COUNT(*) AS c FROM order_items WHERE order_id = ? AND product_type_snapshot <> 'gift'",
-    [orderId]
-  );
-  return Number(row?.c ?? 0) === 0;
 }
 
 /** 取消未付款订单：只释放预留。 */
@@ -942,6 +963,14 @@ export interface OrderFilter {
   limit?: number;
 }
 
+export async function countPendingOrders(eventId: string): Promise<number> {
+  const row = await ex().readOne<{ c: number }>(
+    "SELECT COUNT(*) AS c FROM orders WHERE event_id = ? AND status = 'pending_payment'",
+    [eventId]
+  );
+  return Number(row?.c ?? 0);
+}
+
 export async function listOrders(filter: OrderFilter = {}): Promise<Order[]> {
   const where: string[] = [];
   const params: (string | number)[] = [];
@@ -1134,6 +1163,7 @@ export async function getKioskMenu(eventId: string): Promise<MenuItem[]> {
      LEFT JOIN categories cat ON cat.id = p.category_id
      LEFT JOIN inventory i ON i.event_id = c.event_id AND i.variant_id = c.variant_id
      WHERE c.event_id = ? AND c.enabled = 1 AND c.kiosk_visible = 1
+       AND (p.type = 'gift' OR c.event_price_minor IS NOT NULL)
        AND p.archived = 0 AND v.archived = 0
        AND COALESCE(cat.hidden, 0) = 0
      ORDER BY c.sort_order, p.name, v.name`,
