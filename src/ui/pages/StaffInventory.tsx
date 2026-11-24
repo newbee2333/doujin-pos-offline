@@ -5,6 +5,23 @@ import { newId } from '../../domain/ids';
 import { errorMessage, useApp } from '../../store';
 import { ErrorBox, Field, Modal, Spinner, useAsync } from '../components';
 import { AdjustStockModal, type AdjustKind } from '../AdjustStockModal';
+import type { InventoryTxType } from '../../domain/types';
+
+const TX_TYPE_LABEL: Record<InventoryTxType, string> = {
+  initial: '初始入库',
+  reservation: '下单预留',
+  reservation_release: '取消释放',
+  sale: '销售扣减',
+  refund_return: '退款返库',
+  correction_return: '纠错返库',
+  restock: '补货',
+  correction: '盘点调整',
+  damaged: '报损',
+  gift: '赠出',
+  personal: '自用',
+  lost: '遗失',
+  other: '其他'
+};
 
 
 interface AdjustTarget {
@@ -25,7 +42,7 @@ export default function StaffInventoryPage() {
   const inventory = useAsync(() => (eventId ? listInventory(eventId) : Promise.resolve([])), [eventId]);
 
   if (!eventId) return <ErrorBox message="请先选择展会" />;
-  if (configs.loading) {
+  if (configs.loading && !configs.data) {
     return (
       <div className="center-page">
         <Spinner label="读取库存…" />
@@ -199,7 +216,7 @@ function TransactionList({ eventId }: { eventId: string }) {
                 <td className="tiny">{new Date(t.created_at).toLocaleString('zh-CN')}</td>
                 <td>{nameOf(t.variant_id)}</td>
                 <td>
-                  <span className="badge">{t.type}</span>
+                  <span className="badge">{TX_TYPE_LABEL[t.type] ?? t.type}</span>
                 </td>
                 <td className="num">{t.delta_physical}</td>
                 <td className="num">{t.delta_reserved}</td>

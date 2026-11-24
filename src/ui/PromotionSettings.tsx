@@ -26,7 +26,7 @@ async function loadWorkspace(eventId: string) {
 }
 export function PromotionWorkspace({ eventId, currency, disabled }: { eventId: string; currency: Currency; disabled: boolean }) {
   const state = useAsync(() => loadWorkspace(eventId), [eventId]);
-  if (!state.data) return <><Spinner label="读取优惠与商品…"/><ErrorBox message={state.error}/></>;
+  if (state.loading || !state.data) return <><Spinner label="读取优惠与商品…"/><ErrorBox message={state.error}/></>;
   return <PromotionForm key={eventId} data={state.data} eventId={eventId} currency={currency} disabled={disabled}/>;
 }
 type TierDraft = { threshold: string; reduction: string };
@@ -68,7 +68,7 @@ function PromotionForm({ data, eventId, currency, disabled }: {
       if (!(link instanceof HTMLAnchorElement) || link.target === '_blank' || link.hasAttribute('download')) return;
       const destination = new URL(link.href);
       if (destination.origin !== location.origin || destination.href === location.href) return;
-      event.preventDefault(); setLeaving(destination.pathname + destination.search + destination.hash);
+      event.preventDefault(); event.stopPropagation(); setLeaving(destination.pathname + destination.search + destination.hash);
     };
     window.addEventListener('beforeunload', guard);
     document.addEventListener('click', guardNavigation, true);
@@ -81,7 +81,16 @@ function PromotionForm({ data, eventId, currency, disabled }: {
   async function save() {
     setBusy(true); setError(null);
     try {
-      await savePromotions(eventId, { ...rules, tiers: tiers.map(t => ({ threshold: parseAmountToMinor(t.threshold, currency), reduction: parseAmountToMinor(t.reduction, currency) })) });
+      // 自动清理已下架、已移除、已清空本场价或特价高于现行参考价的残留项，避免整场优惠无法保存
+      const availableMap = new Map(available.map(c => [c.variant_id, c]));
+      const cleanPrices: PromotionRules['prices'] = {};
+      for (const [id, adj] of Object.entries(rules.prices)) {
+        const cfg = availableMap.get(id);
+        if (!cfg || cfg.event_price_minor === null) continue;
+        if (adj.kind === 'price' && adj.value > cfg.event_price_minor) continue;
+        cleanPrices[id] = adj;
+      }
+      await savePromotions(eventId, { ...rules, prices: cleanPrices, tiers: tiers.map(t => ({ threshold: parseAmountToMinor(t.threshold, currency), reduction: parseAmountToMinor(t.reduction, currency) })) });
       const next = await getPromotions(eventId);
       setRules(next); setSavedRules(next); setTiers(tierDrafts(next, currency));
     } catch (e) { setError(errorMessage(e)); }
@@ -122,7 +131,7 @@ function PromotionForm({ data, eventId, currency, disabled }: {
           {!tiers.length && <p className="small muted">尚未设置满减。例：满 150 减 20。</p>}
           {tiers.map((tier, index) => <div className="promotion-tier" key={index}><label><span>满（{currency === 'CNY' ? '元' : '日元'}）</span><input aria-label={`满减门槛${index + 1}`} inputMode="decimal" value={tier.threshold} onChange={e => setTiers(tiers.map((v, i) => i === index ? { ...v, threshold: e.target.value } : v))}/></label><label><span>减</span><input aria-label={`满减金额${index + 1}`} inputMode="decimal" value={tier.reduction} onChange={e => setTiers(tiers.map((v, i) => i === index ? { ...v, reduction: e.target.value } : v))}/></label><button className="small ghost" aria-label={`删除第${index + 1}档`} onClick={() => setTiers(tiers.filter((_, i) => i !== index))}>删除</button></div>)}
           <button onClick={() => setTiers([...tiers, { threshold: '', reduction: '' }])}>＋ 添加满减档位</button>
-          <details className="promotion-explanation"><summary className="small">门槛怎么算？</summary><p className="tiny muted">按参与商品的本场原价 × 数量判断，打折和人工降价不改变资格。每单取达到的最高一档，不累加；实际减免最多减至参与商品为零元。套装按套装价计算，不重复计算成分。</p></details>
+          <details className="promotion-explanation"><summary className="small">门槛怎么算？</summary><p className="tiny muted">按参与商品的活动折后价 × 数量判断，摊主临时人工降价不改变资格。每单取达到的最高一档，不累加；实际减免最多减至参与商品为零元。套装按套装价计算，不重复计算成分。</p></details>
         </aside>
       </div>
       <div className="promotion-save-bar">

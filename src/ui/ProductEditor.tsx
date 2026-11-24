@@ -227,7 +227,7 @@ export function ProductEditorModal({
     setFieldErrors({});
     try {
       // 成分自检放在最前面：写到一半被服务端拒掉，商品那部分已经落盘了，现场很难解释。
-      if (isBundle && editing && compsTouched && !bundleComps.length) {
+      if (isBundle && !componentsLoading && !bundleComps.length) {
         throw new Error('套装至少要有一个成分');
       }
       const willWriteComps = isBundle && bundleComps.length > 0 && (compsTouched || !editing);

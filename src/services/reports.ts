@@ -205,20 +205,12 @@ export function getInventoryConsumption(eventId: string): Promise<ConsumptionRow
             COALESCE((SELECT SUM(rr.quantity_returned) FROM refund_returns rr
                       JOIN refunds r2 ON r2.id = rr.refund_id
                       JOIN orders o2 ON o2.id = r2.order_id
-                      WHERE o2.event_id = ? AND rr.component_variant_id = c.component_variant_id), 0)
-            + COALESCE((SELECT SUM(cr.quantity_returned) FROM correction_returns cr
-                      JOIN order_corrections oc ON oc.id = cr.correction_id
-                      JOIN orders o3 ON o3.id = oc.order_id
-                      WHERE o3.event_id = ? AND cr.component_variant_id = c.component_variant_id), 0) AS returned_units,
+                      WHERE o2.event_id = ? AND rr.component_variant_id = c.component_variant_id), 0) AS returned_units,
             SUM(c.quantity_total)
             - COALESCE((SELECT SUM(rr.quantity_returned) FROM refund_returns rr
                       JOIN refunds r2 ON r2.id = rr.refund_id
                       JOIN orders o2 ON o2.id = r2.order_id
-                      WHERE o2.event_id = ? AND rr.component_variant_id = c.component_variant_id), 0)
-            - COALESCE((SELECT SUM(cr.quantity_returned) FROM correction_returns cr
-                      JOIN order_corrections oc ON oc.id = cr.correction_id
-                      JOIN orders o3 ON o3.id = oc.order_id
-                      WHERE o3.event_id = ? AND cr.component_variant_id = c.component_variant_id), 0) AS net_units
+                      WHERE o2.event_id = ? AND rr.component_variant_id = c.component_variant_id), 0) AS net_units
      FROM order_inventory_components c
      JOIN order_items oi ON oi.id = c.order_item_id
      JOIN orders o ON o.id = oi.order_id
@@ -227,7 +219,7 @@ export function getInventoryConsumption(eventId: string): Promise<ConsumptionRow
      WHERE o.event_id = ? AND o.status IN ${SALES_STATUSES}
      GROUP BY c.component_variant_id
      ORDER BY sold_units DESC`,
-    [eventId, eventId, eventId, eventId, eventId]
+    [eventId, eventId, eventId]
   );
 }
 
@@ -259,6 +251,17 @@ export async function addCashMovement(
     if (Number(row?.c ?? 0) > 0) throw new DomainError('本场已设置过开场备用金，后续增减请存入/取出');
   }
   await ex().tx([
+    ...(type === 'opening'
+      ? [
+          {
+            t: 'assert' as const,
+            sql: "SELECT COUNT(*) FROM cash_movements WHERE event_id = ? AND type = 'opening'",
+            params: [eventId],
+            equals: 0,
+            message: '本场已设置过开场备用金，后续增减请存入/取出'
+          }
+        ]
+      : []),
     {
       t: 'run',
       sql: 'INSERT INTO cash_movements (id, event_id, type, amount_minor, reason, created_at, operation_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
@@ -355,6 +358,13 @@ export async function settleEvent(
   const settlementId = newId();
   await ex().tx([
     {
+      t: 'assert',
+      sql: "SELECT COUNT(*) FROM orders WHERE event_id = ? AND status = 'pending_payment'",
+      params: [eventId],
+      equals: 0,
+      message: '还有待付款订单未处理，不能结算'
+    },
+    {
       t: 'run',
       sql: 'UPDATE settlements SET superseded = 1 WHERE event_id = ? AND superseded = 0',
       params: [eventId]
@@ -389,8 +399,8 @@ export function listSettlements(eventId: string): Promise<Settlement[]> {
 
 function csvCell(value: unknown): string {
   let s = value === null || value === undefined ? '' : String(value);
-  // 表格软件公式注入防护
-  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
+  // 表格软件公式注入防护：保留纯数值（含负数如 -2），仅对字符串字段做前缀转义
+  if (typeof value !== 'number' && /^[=+\-@\t\r]/.test(s)) s = `'${s}`;
   if (/[",\n\r]/.test(s)) s = `"${s.replace(/"/g, '""')}"`;
   return s;
 }

@@ -37,6 +37,7 @@ interface AppState {
   limitedMode: boolean;
   busy: number;
   toast: string | null;
+  dataVersion: number;
 
   setDiagnostics: (d: Partial<BootDiagnostics>) => void;
   setStage: (s: BootStage, error?: string | null) => void;
@@ -50,6 +51,7 @@ interface AppState {
   setCurrentOrder: (id: string | null) => void;
   setBusy: (delta: number) => void;
   showToast: (msg: string | null) => void;
+  bumpDataVersion: () => void;
 }
 
 export const useApp = create<AppState>((set) => ({
@@ -64,11 +66,13 @@ export const useApp = create<AppState>((set) => ({
   limitedMode: false,
   busy: 0,
   toast: null,
+  dataVersion: 0,
 
   setDiagnostics: (d) => set((s) => ({ diagnostics: { ...s.diagnostics, ...d } })),
   setStage: (stage, error = null) => set({ stage, error }),
   setDbStatus: (dbStatus) => set({ dbStatus }),
-  setCurrentEvent: (currentEventId) => set({ currentEventId }),
+  setCurrentEvent: (currentEventId) =>
+    set((s) => (s.currentEventId === currentEventId ? s : { currentEventId, cart: [], currentOrderId: null })),
   unlockStaff: () => set({ staffUnlocked: true }),
   lockStaff: () => set({ staffUnlocked: false, currentOrderId: null }),
   setLimitedMode: (limitedMode) => set({ limitedMode }),
@@ -76,7 +80,8 @@ export const useApp = create<AppState>((set) => ({
   clearCart: () => set({ cart: [] }),
   setCurrentOrder: (currentOrderId) => set({ currentOrderId }),
   setBusy: (delta) => set((s) => ({ busy: Math.max(0, s.busy + delta) })),
-  showToast: (toast) => set({ toast })
+  showToast: (toast) => set({ toast }),
+  bumpDataVersion: () => set((s) => ({ dataVersion: s.dataVersion + 1 }))
 }));
 
 const INIT_FLAG = 'doujin-pos:initialized';

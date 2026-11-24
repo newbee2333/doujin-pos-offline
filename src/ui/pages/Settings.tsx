@@ -1,13 +1,19 @@
-import { useState } from 'react';
-import { setSetting } from '../../services/context';
-import { getLandscapeCartEnabled, isPinSet, setLandscapeCartEnabled, setPin } from '../../services/system';
+import { useEffect, useState } from 'react';
+import { getSetting, setSetting } from '../../services/context';
+import {
+  getBoothName,
+  getLandscapeCartEnabled,
+  isPinSet,
+  setBoothName,
+  setLandscapeCartEnabled,
+  setPin
+} from '../../services/system';
 import { checkCapabilities, requestPersistence } from '../../db/storage-guard';
 import { errorMessage, useApp } from '../../store';
-import { ErrorBox, Field, SetPinFlow, Spinner, useAsync } from '../components';
+import { ErrorBox, Field, Modal, SetPinFlow, Spinner, useAsync } from '../components';
 import { formatBytes } from '../../domain/image';
 import { useTheme, type ThemePreference } from '../../theme';
 import { authorizeAdjustment, requiresAdjustmentPin } from '../../services/promotions';
-import { Modal } from '../components';
 
 const THEME_OPTIONS: { value: ThemePreference; label: string; hint: string }[] = [
   { value: 'system', label: '跟随系统', hint: '随设备自动切换' },
@@ -25,72 +31,242 @@ export default function SettingsPage() {
   const [layoutBusy, setLayoutBusy] = useState(false);
   const [layoutError, setLayoutError] = useState<string | null>(null);
   const layout = useAsync(getLandscapeCartEnabled, []);
+  const storedBoothName = useAsync(getBoothName, []);
+  const storedDeviceLabel = useAsync(() => getSetting('device.label'), []);
+  const [boothNameInput, setBoothNameInput] = useState('');
+  const [boothNameLoaded, setBoothNameLoaded] = useState(false);
+  const [deviceLabelInput, setDeviceLabelInput] = useState('');
+  const [deviceLabelLoaded, setDeviceLabelLoaded] = useState(false);
   const { preference, setPreference, lightPalette, setLightPalette, storageError } = useTheme();
 
   const pinSet = useAsync(() => isPinSet(), []);
   const adjustmentSecurity = useAsync(requiresAdjustmentPin, []);
   const [changingSecurity, setChangingSecurity] = useState(false);
   const [securityPin, setSecurityPin] = useState('');
+  const [securityError, setSecurityError] = useState<string | null>(null);
   const [securityBusy, setSecurityBusy] = useState(false);
   const persisted = useAsync(() => requestPersistence(), []);
   const caps = useAsync(() => checkCapabilities(), []);
 
+  useEffect(() => {
+    if (!storedBoothName.loading && !boothNameLoaded) {
+      setBoothNameInput(storedBoothName.data ?? '');
+      setBoothNameLoaded(true);
+    }
+  }, [storedBoothName.loading, storedBoothName.data, boothNameLoaded]);
+
+  useEffect(() => {
+    if (!storedDeviceLabel.loading && !deviceLabelLoaded) {
+      setDeviceLabelInput(storedDeviceLabel.data ?? '');
+      setDeviceLabelLoaded(true);
+    }
+  }, [storedDeviceLabel.loading, storedDeviceLabel.data, deviceLabelLoaded]);
+
   return (
     <div className="page narrow">
-      {changingSecurity && <Modal title="关闭调价密码确认" onClose={securityBusy ? undefined : () => setChangingSecurity(false)} actions={<><button disabled={securityBusy} onClick={() => setChangingSecurity(false)}>取消</button><button className="primary" disabled={securityBusy} onClick={async () => { setSecurityBusy(true); try { await authorizeAdjustment(securityPin); await setSetting('security.adjustment_pin', '0'); setSecurityPin(''); setChangingSecurity(false); adjustmentSecurity.reload(); setError(null); } catch (e) { setError(errorMessage(e)); } finally { setSecurityBusy(false); } }}>确认关闭</button></>}><p>关闭后，已解锁后台的人员可以直接人工调价。请输入后台密码确认。</p><input type="password" aria-label="安全设置确认密码" inputMode="numeric" value={securityPin} onChange={e => setSecurityPin(e.target.value)}/><ErrorBox message={error}/></Modal>}
+      {changingSecurity && (
+        <Modal
+          title="关闭调价密码确认"
+          onClose={
+            securityBusy
+              ? undefined
+              : () => {
+                  setChangingSecurity(false);
+                  setSecurityPin('');
+                  setSecurityError(null);
+                }
+          }
+          actions={
+            <>
+              <button
+                disabled={securityBusy}
+                onClick={() => {
+                  setChangingSecurity(false);
+                  setSecurityPin('');
+                  setSecurityError(null);
+                }}
+              >
+                取消
+              </button>
+              <button
+                className="primary"
+                disabled={securityBusy}
+                onClick={async () => {
+                  setSecurityBusy(true);
+                  setSecurityError(null);
+                  try {
+                    await authorizeAdjustment(securityPin);
+                    await setSetting('security.adjustment_pin', '0');
+                    setSecurityPin('');
+                    setSecurityError(null);
+                    setChangingSecurity(false);
+                    adjustmentSecurity.reload();
+                  } catch (e) {
+                    setSecurityError(errorMessage(e));
+                  } finally {
+                    setSecurityBusy(false);
+                  }
+                }}
+              >
+                确认关闭
+              </button>
+            </>
+          }
+        >
+          <p>关闭后，已解锁后台的人员可以直接人工调价。请输入后台密码确认。</p>
+          <input
+            type="password"
+            aria-label="安全设置确认密码"
+            inputMode="numeric"
+            value={securityPin}
+            onChange={(e) => setSecurityPin(e.target.value)}
+          />
+          <ErrorBox message={securityError} />
+        </Modal>
+      )}
       <h1>设置</h1>
 
       <div className="card">
         <h2>外观</h2>
         <div className="theme-options" role="radiogroup" aria-label="外观模式">
-          {THEME_OPTIONS.map(option => (
+          {THEME_OPTIONS.map((option) => (
             <label className={`theme-choice${preference === option.value ? ' selected' : ''}`} key={option.value}>
-              <input type="radio" name="theme" value={option.value} checked={preference === option.value}
-                onChange={() => setPreference(option.value)} />
-              <span><strong>{option.label}</strong><span className="tiny muted">{option.hint}</span></span>
+              <input
+                type="radio"
+                name="theme"
+                value={option.value}
+                checked={preference === option.value}
+                onChange={() => setPreference(option.value)}
+              />
+              <span>
+                <strong>{option.label}</strong>
+                <span className="tiny muted">{option.hint}</span>
+              </span>
             </label>
           ))}
         </div>
         <h3 className="palette-heading">浅色配色</h3>
         <div className="theme-options light-theme-options" role="radiogroup" aria-label="浅色配色">
-          {(['default', 'warm'] as const).map(palette => <label className={`theme-choice${lightPalette === palette ? ' selected' : ''}`} key={palette}>
-            <input type="radio" name="light-palette" checked={lightPalette === palette} onChange={() => setLightPalette(palette)} />
-            <span className={`palette-swatch ${palette}`} aria-hidden="true" />
-            <span><strong>{palette === 'warm' ? '暖纸' : '清爽白'}</strong><span className="tiny muted">{palette === 'warm' ? '暖白纸面 · 柔和描边' : '原有浅色配色'}</span></span>
-          </label>)}
+          {(['default', 'warm'] as const).map((palette) => (
+            <label className={`theme-choice${lightPalette === palette ? ' selected' : ''}`} key={palette}>
+              <input
+                type="radio"
+                name="light-palette"
+                checked={lightPalette === palette}
+                onChange={() => setLightPalette(palette)}
+              />
+              <span className={`palette-swatch ${palette}`} aria-hidden="true" />
+              <span>
+                <strong>{palette === 'warm' ? '暖纸' : '清爽白'}</strong>
+                <span className="tiny muted">
+                  {palette === 'warm' ? '暖米画纸 · 温润护眼' : '浅画纸白 · 樱桃玫红'}
+                </span>
+              </span>
+            </label>
+          ))}
         </div>
-        <p className="tiny muted">浅色配色也用于跟随系统时的日间界面，深色模式保持夜间配色。</p>
+        <p className="tiny muted">浅色配色也用于跟随系统时的日间界面，深色模式保持深靛夜间配色。</p>
         <p className="small muted">默认跟随系统，游客菜单与后台同步切换。选择只保存在这台设备的浏览器中，不随数据库备份迁移。</p>
-        {storageError ? <p className="notice" role="status">当前浏览器无法保存本次外观选择；当前窗口已生效，重新打开后可能恢复原设置。</p> : null}
+        {storageError ? (
+          <p className="notice" role="status">
+            当前浏览器无法保存本次外观选择；当前窗口已生效，重新打开后可能恢复原设置。
+          </p>
+        ) : null}
       </div>
 
       <div className="card">
         <h2>游客菜单</h2>
-        {layout.loading ? <Spinner label="读取布局设置…" /> : <label className="check">
-          <input type="checkbox" role="switch" checked={layoutOverride ?? layout.data ?? true}
-            disabled={layoutBusy || !!layout.error} onChange={async e => {
-              const enabled = e.target.checked;
-              const previous = layoutOverride ?? layout.data ?? true;
-              setLayoutOverride(enabled); setLayoutBusy(true); setLayoutError(null);
-              try {
-                await setLandscapeCartEnabled(enabled);
-                showToast(enabled ? '横屏改用右侧购物车' : '横屏改用底部购物车入口');
-              } catch (err) { setLayoutOverride(previous); setLayoutError(errorMessage(err)); }
-              finally { setLayoutBusy(false); }
-            }} />
-          <span>iPad 横屏右侧购物车</span>
-        </label>}
-        <p className="small muted">默认开启。关闭后，横屏也使用底部的「查看购物车」入口，点击后进入购物车页。竖屏和手机布局不变。</p>
+        <div className="col" style={{ marginBottom: 14 }}>
+          <Field label="摊位 / 社团招牌名（选填，显示在游客菜单顶部；留空则显示当前展会名）">
+            <div className="row tight">
+              <input
+                type="text"
+                style={{ flex: 1 }}
+                value={boothNameInput}
+                onChange={(e) => setBoothNameInput(e.target.value)}
+                placeholder="例如：猫猫印务局"
+              />
+              <button
+                type="button"
+                className="small"
+                onClick={async () => {
+                  try {
+                    await setBoothName(boothNameInput);
+                    showToast(boothNameInput.trim() ? '已保存摊位招牌名' : '已清除，将显示当前展会名');
+                  } catch (e) {
+                    showToast(errorMessage(e));
+                  }
+                }}
+              >
+                保存
+              </button>
+            </div>
+          </Field>
+        </div>
+
+        {layout.loading ? (
+          <Spinner label="读取布局设置…" />
+        ) : (
+          <label className="check">
+            <input
+              type="checkbox"
+              role="switch"
+              checked={layoutOverride ?? layout.data ?? true}
+              disabled={layoutBusy || !!layout.error}
+              onChange={async (e) => {
+                const enabled = e.target.checked;
+                const previous = layoutOverride ?? layout.data ?? true;
+                setLayoutOverride(enabled);
+                setLayoutBusy(true);
+                setLayoutError(null);
+                try {
+                  await setLandscapeCartEnabled(enabled);
+                  showToast(enabled ? '横屏改用右侧购物车' : '横屏改用底部购物车入口');
+                } catch (err) {
+                  setLayoutOverride(previous);
+                  setLayoutError(errorMessage(err));
+                } finally {
+                  setLayoutBusy(false);
+                }
+              }}
+            />
+            <span>iPad 横屏右侧购物车</span>
+          </label>
+        )}
+        <p className="small muted">
+          默认开启。关闭后，横屏也使用底部的「查看购物车」入口，点击后进入购物车页。竖屏和手机布局不变。
+        </p>
         <ErrorBox message={layoutError ?? layout.error} />
       </div>
 
       <div className="card">
         <h2>安全与访问</h2>
-        <label className="check"><input type="checkbox" role="switch" checked={adjustmentSecurity.data ?? true} disabled={adjustmentSecurity.loading || !!adjustmentSecurity.error} onChange={async e => {
-          if (!e.target.checked) { setChangingSecurity(true); setError(null); }
-          else { try { await setSetting('security.adjustment_pin', '1'); adjustmentSecurity.reload(); } catch (e) { setError(errorMessage(e)); } }
-        }}/>人工调价需要后台密码确认</label>
-        <p className="tiny muted">默认开启。调价与后台共用密码，连续输错 5 次需等待一分钟；调价原因和金额会记入审计。此设置随数据库备份保存。</p>
+        <label className="check">
+          <input
+            type="checkbox"
+            role="switch"
+            checked={adjustmentSecurity.data ?? true}
+            disabled={adjustmentSecurity.loading || !!adjustmentSecurity.error}
+            onChange={async (e) => {
+              if (!e.target.checked) {
+                setSecurityPin('');
+                setSecurityError(null);
+                setChangingSecurity(true);
+              } else {
+                try {
+                  await setSetting('security.adjustment_pin', '1');
+                  adjustmentSecurity.reload();
+                } catch (e) {
+                  setError(errorMessage(e));
+                }
+              }
+            }}
+          />
+          人工调价需要后台密码确认
+        </label>
+        <p className="tiny muted">
+          默认开启。调价与后台共用密码，连续输错 5 次需等待一分钟；调价原因和金额会记入审计。此设置随数据库备份保存。
+        </p>
         <p className="small muted">
           后台密码为 4～8 位数字，用于防止游客误触后台，不能代替设备锁屏密码。请妥善保管。
         </p>
@@ -113,8 +289,6 @@ export default function SettingsPage() {
         ) : (
           <>
             <ErrorBox message={error} />
-            {/* 不要求先输旧 PIN：能走到这一页说明会话本来就是解锁状态，
-                再输一次只是多一道仪式感。 */}
             <SetPinFlow
               firstHint="输入新的 4 到 8 位数字"
               onCancel={() => {
@@ -136,11 +310,6 @@ export default function SettingsPage() {
           </>
         )}
       </div>
-
-      {/* 「库存展示」原来在设置里，但真正要调的是「哪几个商品露库存」——
-          那是个逐商品的开关，在展会配置的参展商品表里。设置里放一个全局默认值，
-          既和逐商品开关重复，又让人以为改了它就等于改了全部。
-          现在只保留逐商品开关，说明挂在那个列头的问号上。 */}
 
       <div className="card">
         <h2>存储与离线状态</h2>
@@ -169,13 +338,13 @@ export default function SettingsPage() {
             <dt>跨源隔离</dt>
             <dd>{caps.data?.crossOriginIsolated ?? diagnostics.capabilities?.crossOriginIsolated ? '已启用' : '未启用'}</dd>
           </dl>
-        {(caps.data?.details?.length ?? 0) > 0 ? (
-          <div className="notice">
-            {(caps.data?.details ?? []).map((d) => (
-              <div key={d}>{d}</div>
-            ))}
-          </div>
-        ) : null}
+          {(caps.data?.details?.length ?? 0) > 0 ? (
+            <div className="notice">
+              {(caps.data?.details ?? []).map((d) => (
+                <div key={d}>{d}</div>
+              ))}
+            </div>
+          ) : null}
         </details>
         <p className="tiny muted" style={{ marginBottom: 0 }}>
           持久化状态由当前浏览器决定。
@@ -189,10 +358,11 @@ export default function SettingsPage() {
         </p>
         <Field label="备注（记录在设置里，可用于标记设备）">
           <input
-            defaultValue=""
+            value={deviceLabelInput}
+            onChange={(e) => setDeviceLabelInput(e.target.value)}
             placeholder="例如：主营业平板"
-            onBlur={async (e) => {
-              await setSetting('device.label', e.target.value);
+            onBlur={async () => {
+              await setSetting('device.label', deviceLabelInput.trim());
             }}
           />
         </Field>

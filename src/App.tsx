@@ -18,7 +18,10 @@ import {
   readStoredSlot,
   useApp
 } from './store';
+import { getEvent } from './services/events';
+import { countPendingOrders } from './services/orders';
 import { getCurrentEventId, isPinSet, setPin, verifyPin } from './services/system';
+import type { Event as BoothEvent } from './domain/types';
 import { ErrorBox, PinPad, SetPinFlow, Spinner } from './ui/components';
 import SetupPage from './ui/pages/Setup';
 import HomePage from './ui/pages/Home';
@@ -27,7 +30,6 @@ import KioskMenuPage from './ui/pages/KioskMenu';
 import KioskCartPage from './ui/pages/KioskCart';
 import KioskCheckoutPage from './ui/pages/KioskCheckout';
 import KioskOrderPage from './ui/pages/KioskOrder';
-import StaffCheckoutPage from './ui/pages/StaffCheckout';
 import StaffPendingPage from './ui/pages/StaffPending';
 import StaffProductsPage from './ui/pages/StaffProducts';
 import StaffEventsPage from './ui/pages/StaffEvents';
@@ -40,14 +42,38 @@ import SettingsPage from './ui/pages/Settings';
 import PreviewPage from './ui/pages/Preview';
 import { askBeforeKiosk, confirmEnterKiosk } from './ui/kiosk-entry';
 
+let activeOwnership: { release: () => void; reason?: string } | null = null;
+
+function releaseActiveOwnership() {
+  if (!activeOwnership) return;
+  try {
+    activeOwnership.release();
+  } catch {
+    /* 忽略 */
+  }
+  activeOwnership = null;
+}
+
 function BootScreen() {
-  const { diagnostics, error } = useApp((s) => ({ diagnostics: s.diagnostics, error: s.error }));
+  const diagnostics = useApp((s) => s.diagnostics);
+  const error = useApp((s) => s.error);
+  const stage = useApp((s) => s.stage);
+  const bootstrap = useBootstrap();
   return (
     <div className="center-page">
       <div className="card">
-        <h2>正在准备离线数据库</h2>
-        <p className="muted small">正在检查浏览器和持久化状态，并打开本机数据库。</p>
+        <h2>{stage === 'error' ? '离线数据库启动失败' : '正在准备离线数据库'}</h2>
+        <p className="muted small">
+          {stage === 'error'
+            ? '未能完成本机数据库初始化，你可以点击重试或检查浏览器存储权限。'
+            : '正在检查浏览器和持久化状态，并打开本机数据库。'}
+        </p>
         {error ? <ErrorBox message={error} /> : <Spinner label="检查中…" />}
+        {stage === 'error' ? (
+          <button className="primary" onClick={bootstrap}>
+            重试
+          </button>
+        ) : null}
         {diagnostics.capabilities?.details?.length ? (
           <ul className="small muted" style={{ textAlign: 'left' }}>
             {diagnostics.capabilities.details.map((d: string) => (
@@ -69,50 +95,45 @@ function BlockedScreen() {
         <h2>当前环境不能营业</h2>
         <p className="small muted">当前打开方式或浏览器不支持本机数据保存。请通过正式发布链接打开应用；仍无法使用时，可展开技术详情提供给维护者排查。</p>
         <details>
-        <summary>查看技术详情</summary>
-        <p className="small muted">
-          本应用需要安全上下文、WebAssembly、OPFS 与跨源隔离（SharedArrayBuffer）。
-          请使用 HTTPS 或 localhost 打开，并确认服务端返回 COOP/COEP 响应头。
-        </p>
-        <table className="small">
-          <tbody>
-            <tr>
-              <td>安全上下文</td>
-              <td>{caps?.secureContext ? '通过' : '不满足'}</td>
-            </tr>
-            <tr>
-              <td>跨源隔离</td>
-              <td>{caps?.crossOriginIsolated ? '通过' : '不满足'}</td>
-            </tr>
-            <tr>
-              <td>WebAssembly</td>
-              <td>{caps?.webAssembly ? '通过' : '不满足'}</td>
-            </tr>
-            <tr>
-              <td>OPFS</td>
-              <td>{caps?.opfs ? '通过' : '不满足'}</td>
-            </tr>
-            <tr>
-              <td>SharedArrayBuffer</td>
-              <td>{caps?.sharedArrayBuffer ? '通过' : '不满足'}</td>
-            </tr>
-            <tr>
-              <td>Service Worker</td>
-              <td>{caps?.serviceWorker ? '可用' : '不可用'}</td>
-            </tr>
-          </tbody>
-        </table>
+          <summary>查看技术详情</summary>
+          <p className="small muted">
+            本应用需要安全上下文、WebAssembly、OPFS 与跨源隔离（SharedArrayBuffer）。
+            请使用 HTTPS 或 localhost 打开，并确认服务端返回 COOP/COEP 响应头。
+          </p>
+          <table className="small">
+            <tbody>
+              <tr>
+                <td>安全上下文</td>
+                <td>{caps?.secureContext ? '通过' : '不满足'}</td>
+              </tr>
+              <tr>
+                <td>跨源隔离</td>
+                <td>{caps?.crossOriginIsolated ? '通过' : '不满足'}</td>
+              </tr>
+              <tr>
+                <td>WebAssembly</td>
+                <td>{caps?.webAssembly ? '通过' : '不满足'}</td>
+              </tr>
+              <tr>
+                <td>OPFS</td>
+                <td>{caps?.opfs ? '通过' : '不满足'}</td>
+              </tr>
+              <tr>
+                <td>SharedArrayBuffer</td>
+                <td>{caps?.sharedArrayBuffer ? '通过' : '不满足'}</td>
+              </tr>
+              <tr>
+                <td>Service Worker</td>
+                <td>{caps?.serviceWorker ? '可用' : '不可用'}</td>
+              </tr>
+            </tbody>
+          </table>
         </details>
       </div>
     </div>
   );
 }
 
-/** 摊主在「持久化未获批」的确认框里点了取消。
- *
- *  这一屏刻意不复用 BlockedScreen：那边的每一行都在说「你的环境不行」，
- *  而这里环境完全正常，只是刚才那个选择需要重新做一次。把两者混用会让
- *  摊主去查一个根本不存在的浏览器问题。 */
 function DeclinedLimitedScreen() {
   const bootstrap = useBootstrap();
   return (
@@ -123,9 +144,7 @@ function DeclinedLimitedScreen() {
           浏览器没有授予持久化存储权限，而你没有选择受限营业，所以没有打开数据库。
           这不影响换台设备或换种方式继续——你的数据没有被改动。
         </p>
-        <p className="small muted">
-          受限营业意味着本机数据有被浏览器回收的可能。
-        </p>
+        <p className="small muted">受限营业意味着本机数据有被浏览器回收的可能。</p>
         <button className="primary" onClick={bootstrap}>
           返回并重新选择
         </button>
@@ -160,10 +179,6 @@ function useBootstrap() {
     try {
       const capabilities = await checkCapabilities();
       setDiagnostics({ capabilities });
-      // 判据要和 BlockedScreen 里列的那几行对齐：那边显示了「跨源隔离」和
-      // 「Service Worker」，这里就必须真的检查它们，否则卡片会出现
-      // 「全部通过」却仍然拒绝启动的自相矛盾画面。
-      // OPFS 只有在跨源隔离成立时才谈得上（opfs-sahpool 依赖 SharedArrayBuffer）。
       if (
         !capabilities.secureContext ||
         !capabilities.webAssembly ||
@@ -174,24 +189,23 @@ function useBootstrap() {
         setStage('blocked');
         return;
       }
-      const ownership = await acquireOwnership();
-      if (!ownership.ok) {
-        setStage('another-window');
-        return;
+      if (!activeOwnership) {
+        const ownership = await acquireOwnership();
+        if (!ownership.ok) {
+          setStage('another-window');
+          return;
+        }
+        activeOwnership = ownership;
       }
-      setDiagnostics({ ownershipReason: ownership.reason });
+      setDiagnostics({ ownershipReason: activeOwnership.reason });
       const persistence = await requestPersistence();
       setDiagnostics({ persistence });
       if (!persistence.granted) {
-        // 持久化未获批但 OPFS 可写：交给摊主在引导页决定是否受限营业
         const confirmed = window.confirm(
           '浏览器未授予持久化存储权限。本机数据可能被系统回收。\n\n选择「确定」进入受限营业模式，选择「取消」退出。'
         );
         if (!confirmed) {
-          // 这里以前是 setStage('blocked')，会把它和「环境不支持」混为一谈：
-          // 摊主明明看到能力检测全绿，却被告知「当前环境不能营业 / 请检查 COOP 头」，
-          // 与真实原因（自己刚点了取消）毫无关系。改成独立的一屏，说清发生了什么、
-          // 以及怎么回到营业状态。
+          releaseActiveOwnership();
           setStage('declined-limited');
           return;
         }
@@ -203,25 +217,40 @@ function useBootstrap() {
       setCurrentEvent(eventId || null);
       setStage('ready');
     } catch (e) {
+      releaseActiveOwnership();
       setStage('error', errorMessage(e));
     }
   }, [setCurrentEvent, setDbStatus, setDiagnostics, setStage]);
 }
 
-/** 后台路由保护：未解锁时只显示 PIN 界面，不渲染后台内容。
- *
- *  这一页刻意只做一件事——输 PIN。
- *  它有且只有一条出路：输对 PIN。
- */
 function StaffGuard({ children }: { children: React.ReactNode }) {
   const unlocked = useApp((s) => s.staffUnlocked);
   const unlockStaff = useApp((s) => s.unlockStaff);
+  const datasetId = useApp((s) => s.dbStatus?.datasetId ?? null);
+  const slot = useApp((s) => s.dbStatus?.slot ?? null);
+  const dataVersion = useApp((s) => s.dataVersion);
   const [error, setError] = useState<string | null>(null);
   const [needSetup, setNeedSetup] = useState<boolean | null>(null);
 
   useEffect(() => {
-    isPinSet().then((v) => setNeedSetup(!v));
-  }, []);
+    if (unlocked) return;
+    let cancelled = false;
+    setNeedSetup(null);
+    setError(null);
+    isPinSet()
+      .then((v) => {
+        if (!cancelled) setNeedSetup(!v);
+      })
+      .catch((e) => {
+        if (!cancelled) {
+          setNeedSetup(false);
+          setError(errorMessage(e));
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [unlocked, datasetId, slot, dataVersion]);
 
   if (unlocked) return <>{children}</>;
   if (needSetup === null) {
@@ -241,8 +270,6 @@ function StaffGuard({ children }: { children: React.ReactNode }) {
             后台密码为 4～8 位数字，用于防止游客误触后台，不能代替设备锁屏密码。请妥善保管。
           </p>
           <ErrorBox message={error} />
-          {/* 首次设置也走「输两遍」。按错一位当场就能发现，
-              比事后靠恢复流程找回来便宜得多。 */}
           <SetPinFlow
             firstHint="输入 4 到 8 位数字"
             onSubmit={async (pin) => {
@@ -282,21 +309,23 @@ function StaffGuard({ children }: { children: React.ReactNode }) {
   );
 }
 
-function Sidebar() {
+function Sidebar({ pendingCount }: { pendingCount: number }) {
   const lockStaff = useApp((s) => s.lockStaff);
   const limited = useApp((s) => s.limitedMode);
   const staffUnlocked = useApp((s) => s.staffUnlocked);
   return (
     <nav className="sidebar">
-      <div className="brand">Doujin POS</div>
+      <div className="brand">
+        <span className="brand-stamp" aria-hidden="true">D</span>
+        <span className="brand-text">
+          <strong>Doujin POS</strong>
+          <small>同人摊位工作台</small>
+        </span>
+      </div>
 
-      {/* 三段式：品牌固定 / 导航自己滚 / 底部固定。
-          矮屏（1024×768 的横屏 iPad）装不下 12 项导航，如果整条侧栏一起滚，
-          「锁定后台」会被推到折叠线以下；改成底部 sticky 又会盖住上面一项。
-          拆成独立滚动区之后，两边都不需要将就。 */}
       <div className="sidebar-scroll">
         <NavLink to="/" className={({ isActive }) => (isActive ? 'active' : '')} end>
-          展会主页
+          <span>展会主页</span>
         </NavLink>
         <NavLink
           to="/kiosk"
@@ -305,61 +334,60 @@ function Sidebar() {
             if (!askBeforeKiosk()) e.preventDefault();
           }}
         >
-          游客菜单
+          <span>游客菜单</span>
         </NavLink>
         <NavLink to="/preview" className={({ isActive }) => (isActive ? 'active' : '')}>
-          菜单预览
+          <span>菜单预览</span>
         </NavLink>
 
-        {/* 12 项平铺时，分组落点和摆摊节奏对不上：营业中要在「收银/待付款/订单/库存」
-            之间反复切，而「商品/展会配置」开摊前调一次就基本不动、却和它们挨在一起。
-            现在按 经营 → 配置 → 收摊 三组排，说明书这类参考资料降到侧栏底部。 */}
         <div className="nav-group">
           <div className="nav-label">经营</div>
-          <NavLink to="/staff/checkout" className={({ isActive }) => (isActive ? 'active' : '')}>
-            摊主收银
-          </NavLink>
           <NavLink to="/staff/pending" className={({ isActive }) => (isActive ? 'active' : '')}>
-            待付款
+            <span>待付款</span>
+            {pendingCount > 0 ? (
+              <span className="nav-badge" aria-label={`${pendingCount} 笔待付款`}>
+                {pendingCount}
+              </span>
+            ) : null}
           </NavLink>
           <NavLink to="/staff/orders" className={({ isActive }) => (isActive ? 'active' : '')}>
-            订单
+            <span>订单</span>
           </NavLink>
           <NavLink to="/staff/inventory" className={({ isActive }) => (isActive ? 'active' : '')}>
-            库存
+            <span>库存</span>
           </NavLink>
         </div>
 
         <div className="nav-group">
           <div className="nav-label">配置</div>
           <NavLink to="/staff/products" className={({ isActive }) => (isActive ? 'active' : '')}>
-            商品
+            <span>商品</span>
           </NavLink>
           <NavLink to="/staff/events" className={({ isActive }) => (isActive ? 'active' : '')}>
-            展会配置
+            <span>展会配置</span>
           </NavLink>
           <NavLink to="/staff/promotions" className={({ isActive }) => (isActive ? 'active' : '')}>
-            优惠活动
+            <span>优惠活动</span>
           </NavLink>
         </div>
 
         <div className="nav-group">
           <div className="nav-label">收摊</div>
           <NavLink to="/staff/reports" className={({ isActive }) => (isActive ? 'active' : '')}>
-            报表收摊
+            <span>报表收摊</span>
           </NavLink>
           <NavLink to="/staff/backup" className={({ isActive }) => (isActive ? 'active' : '')}>
-            备份恢复
+            <span>备份恢复</span>
           </NavLink>
           <NavLink to="/settings" className={({ isActive }) => (isActive ? 'active' : '')}>
-            设置
+            <span>设置</span>
           </NavLink>
         </div>
       </div>
 
       <div className="side-bottom">
         <NavLink to="/help" className={({ isActive }) => (isActive ? 'active' : '')}>
-          说明书
+          <span>说明书</span>
         </NavLink>
         {limited ? <div className="side-note">受限营业模式</div> : null}
         {staffUnlocked ? (
@@ -377,44 +405,87 @@ function Shell() {
   const navigate = useNavigate();
   const isKiosk = location.pathname.startsWith('/kiosk');
   const currentEventId = useApp((s) => s.currentEventId);
+  const dataVersion = useApp((s) => s.dataVersion);
+  const dbDatasetId = useApp((s) => s.dbStatus?.datasetId ?? null);
+  const dbSlot = useApp((s) => s.dbStatus?.slot ?? null);
+
+  const [currentEvent, setCurrentEventData] = useState<BoothEvent | null>(null);
+  const [pendingCount, setPendingCount] = useState(0);
 
   useEffect(() => {
-    // 切后台/回到游客页面时清理会话
-    if (isKiosk) useApp.getState().lockStaff();
-  }, [isKiosk]);
+    // 进入任何游客页面时锁定后台；在游客付款页（/kiosk/order/:id）允许摊主临时输入 PIN 解锁，
+    // 但只要返回 /kiosk、/kiosk/cart 或 /kiosk/checkout 就必须重新锁定，防止浏览返回手势绕过鉴权。
+    if (isKiosk && !location.pathname.startsWith('/kiosk/order/')) {
+      useApp.getState().lockStaff();
+    }
+  }, [isKiosk, location.pathname]);
+
+  useEffect(() => {
+    if (isKiosk) return;
+    if (!currentEventId) {
+      setCurrentEventData(null);
+      setPendingCount(0);
+      return;
+    }
+    let cancelled = false;
+    Promise.all([
+      getEvent(currentEventId),
+      countPendingOrders(currentEventId)
+    ])
+      .then(([ev, pending]) => {
+        if (cancelled) return;
+        setCurrentEventData(ev);
+        setPendingCount(pending);
+      })
+      .catch(() => {
+        /* 顶栏状态刷新失败不阻塞主页面 */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [currentEventId, isKiosk, location.pathname, dataVersion, dbDatasetId, dbSlot]);
+
+  const statusText =
+    currentEvent?.status === 'active'
+      ? '营业中'
+      : currentEvent?.status === 'closed'
+        ? '已收摊'
+        : '准备中';
 
   return (
     <div className={isKiosk ? 'app app-kiosk' : 'app app-backend'}>
-      {!isKiosk ? <Sidebar /> : null}
+      {!isKiosk ? <Sidebar pendingCount={pendingCount} /> : null}
       <div className="main">
         {!isKiosk ? (
           <div className="topbar">
-            <strong>同人摊位电子菜单</strong>
-            {currentEventId ? null : <span className="badge warn">未选择展会</span>}
+            {currentEvent ? (
+              <div className="topbar-event">
+                <span className="topbar-event-name">{currentEvent.name}</span>
+                {currentEvent.booth_number ? (
+                  <span className="topbar-booth-stamp">{currentEvent.booth_number}</span>
+                ) : null}
+                <span className={`badge ${currentEvent.status === 'active' ? 'ok' : ''}`}>{statusText}</span>
+              </div>
+            ) : (
+              <div className="topbar-event">
+                <span className="topbar-event-name">Doujin POS</span>
+                <span className="badge warn">未选择展会</span>
+              </div>
+            )}
             <span className="spacer" />
-            <button className="small" onClick={() => navigate('/preview')}>
-              预览菜单效果
-            </button>
             <button className="small ghost" onClick={() => confirmEnterKiosk(navigate)}>
               进入游客菜单
             </button>
           </div>
         ) : null}
-        <div className={isKiosk ? "kiosk-route" + (location.pathname === '/kiosk' ? ' kiosk-menu-route' : '') : 'content'}>
+        <div className={isKiosk ? 'kiosk-route' + (location.pathname === '/kiosk' ? ' kiosk-menu-route' : '') : 'content'}>
           <Routes>
             <Route path="/" element={<HomePage />} />
             <Route path="/kiosk" element={<KioskMenuPage />} />
             <Route path="/kiosk/cart" element={<KioskCartPage />} />
             <Route path="/kiosk/checkout" element={<KioskCheckoutPage />} />
             <Route path="/kiosk/order/:id" element={<KioskOrderPage />} />
-            <Route
-              path="/staff/checkout"
-              element={
-                <StaffGuard>
-                  <StaffCheckoutPage />
-                </StaffGuard>
-              }
-            />
+            <Route path="/staff/checkout" element={<Navigate to="/staff/pending" replace />} />
             <Route
               path="/staff/pending"
               element={
@@ -441,7 +512,11 @@ function Shell() {
             />
             <Route
               path="/staff/promotions"
-              element={<StaffGuard><StaffPromotionsPage /></StaffGuard>}
+              element={
+                <StaffGuard>
+                  <StaffPromotionsPage />
+                </StaffGuard>
+              }
             />
             <Route
               path="/staff/inventory"
@@ -491,8 +566,6 @@ function Shell() {
                 </StaffGuard>
               }
             />
-            {/* 说明书不加 StaffGuard：锁着也看得。
-                忘了 PIN 的人正需要翻它。 */}
             <Route path="/help" element={<HelpPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

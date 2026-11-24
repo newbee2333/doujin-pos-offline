@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { formatMoney } from '../../domain/money';
 import { newId } from '../../domain/ids';
@@ -7,7 +7,7 @@ import { getEvent, getEventPaymentMethods } from '../../services/events';
 import { useApp, errorMessage } from '../../store';
 import { AssetImage, ErrorBox, Spinner, useAssetUrl, useAsync } from '../components';
 import type { Currency } from '../../domain/types';
-import { PriceSummary, PromotionHint, useCartQuote } from '../Pricing';
+import { PriceSummary, PromotionHint, ThresholdProgress, useCartQuote } from '../Pricing';
 
 export default function KioskCheckoutPage() {
   const navigate = useNavigate();
@@ -30,7 +30,17 @@ export default function KioskCheckoutPage() {
   const currency: Currency = event.data?.currency ?? 'CNY';
   const eventActive = event.data?.status === 'active';
   const totalMinor = quote.data?.total ?? 0;
-  const usable = (methods.data ?? []).filter((m) => m.type !== 'qr_payment' || m.qr_asset_id);
+  const usable = useMemo(
+    () => (methods.data ?? []).filter((m) => m.type !== 'qr_payment' || m.qr_asset_id),
+    [methods.data]
+  );
+
+  // 本场仅启用 1 种支付方式时自动默认选中，减少游客多余点击
+  useEffect(() => {
+    if (!methodId && usable.length === 1) {
+      setMethodId(usable[0].id);
+    }
+  }, [methodId, usable]);
 
   if (!eventId) return <ErrorBox message="未选择展会" />;
   if (!cart.length) {
@@ -68,7 +78,7 @@ export default function KioskCheckoutPage() {
   }
 
   return (
-    <div className="kiosk">
+    <div className="kiosk kiosk-checkout">
       <div className="kiosk-header">
         <button className="small ghost" onClick={() => navigate('/kiosk')} disabled={busy}>
           ‹ 返回游客菜单
@@ -79,15 +89,16 @@ export default function KioskCheckoutPage() {
       <div className="content narrow kiosk-with-action-bar">
         <div className="card">
           <h2>订单内容</h2>
-          <PromotionHint rules={quote.data?.rules} currency={currency}/>
+          <PromotionHint rules={quote.data?.rules} currency={currency} />
+          <ThresholdProgress quote={quote.data} currency={currency} />
           {cart.map((c, index) => (
-            <div key={c.variantId} className="row" style={{ padding: '6px 0' }}>
+            <div key={c.variantId} className="row" style={{ padding: '6px 0', borderBottom: '1px solid var(--line)' }}>
               <AssetImage
                 assetId={c.coverAssetId}
                 alt={c.productName}
                 className="cart-thumb cart-thumb-sm"
               />
-              <div style={{ flex: 1 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
                 <div>{c.productName}</div>
                 <div className="small muted">
                   {c.variantName} · {formatMoney(quote.data?.lines[index]?.unit ?? c.priceMinor, currency)} × {c.quantity}
@@ -96,7 +107,7 @@ export default function KioskCheckoutPage() {
               <div className="strong nowrap">{formatMoney(quote.data?.lines[index]?.subtotal ?? c.priceMinor * c.quantity, currency)}</div>
             </div>
           ))}
-          <PriceSummary quote={quote.data} currency={currency}/>
+          <PriceSummary quote={quote.data} currency={currency} />
           <div className="row" style={{ marginTop: 10, borderTop: '1px solid var(--line)', paddingTop: 10 }}>
             <span className="strong">应付总额</span>
             <span className="spacer" />
@@ -104,7 +115,11 @@ export default function KioskCheckoutPage() {
           </div>
         </div>
 
-        {totalMinor > 0 ? (
+        {quote.loading && !quote.data ? (
+          <div className="card">
+            <Spinner label="计算订单金额…" />
+          </div>
+        ) : totalMinor > 0 ? (
           <div className="card">
             <h2>选择支付方式</h2>
             {methods.loading ? <Spinner label="读取支付方式…" /> : null}
@@ -113,6 +128,7 @@ export default function KioskCheckoutPage() {
                 <button
                   key={m.id}
                   className={methodId === m.id ? 'primary' : ''}
+                  aria-pressed={methodId === m.id}
                   onClick={() => setMethodId(m.id)}
                 >
                   {m.name}
@@ -123,9 +139,9 @@ export default function KioskCheckoutPage() {
               <div className="notice danger">当前展会没有可用的支付方式，请让摊主到后台补齐。</div>
             ) : null}
           </div>
-        ) : (
+        ) : quote.data ? (
           <div className="notice ok">本单为零元订单，提交后请摊主确认发放。</div>
-        )}
+        ) : null}
 
         <ErrorBox message={error ?? quote.error} />
 
@@ -136,9 +152,6 @@ export default function KioskCheckoutPage() {
         ) : null}
       </div>
 
-      {/* 提交按钮移出内容流、钉在底部。
-          原来它排在最后一张卡下面，iPad 竖屏 820×1180 下按钮上方内容只占一半高度，
-          顾客付完款要往下找；现在落在单手拇指区，且始终可见。 */}
       <div className="kiosk-action-bar">
         <div className="inner">
           <button

@@ -4,6 +4,7 @@ import { formatMoney } from '../domain/money';
 import type { Currency } from '../domain/types';
 import { getAsset } from '../services/catalog';
 import { useApp } from '../store';
+import { CategoryPlaceholder } from './CategoryPlaceholder';
 
 /* --------------------------------------------------------------- 异步数据 */
 
@@ -31,7 +32,8 @@ export function useAsync<T>(fn: () => Promise<T>, deps: unknown[]): {
       cancelled = true;
     };
   }, [stable, nonce]);
-  return { data, loading, error, reload: () => setNonce((n) => n + 1) };
+  const reload = useCallback(() => setNonce((n) => n + 1), []);
+  return { data, loading, error, reload };
 }
 
 /* --------------------------------------------------------------- 资源图片 */
@@ -39,21 +41,25 @@ export function useAsync<T>(fn: () => Promise<T>, deps: unknown[]): {
 export function useAssetUrl(assetId: string | null | undefined): string | null {
   const [url, setUrl] = useState<string | null>(null);
   useEffect(() => {
-    if (!assetId) {
-      setUrl(null);
-      return;
-    }
+    setUrl(null);
+    if (!assetId) return;
     let objectUrl: string | null = null;
     let cancelled = false;
     getAsset(assetId)
       .then((row) => {
-        if (!row || cancelled) return;
+        if (cancelled) return;
+        if (!row) {
+          setUrl(null);
+          return;
+        }
         const bytes = row.blob;
         const blob = new Blob([bytes as unknown as BlobPart], { type: row.mime_type || 'application/octet-stream' });
         objectUrl = URL.createObjectURL(blob);
         setUrl(objectUrl);
       })
-      .catch(() => setUrl(null));
+      .catch(() => {
+        if (!cancelled) setUrl(null);
+      });
     return () => {
       cancelled = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
@@ -65,19 +71,20 @@ export function useAssetUrl(assetId: string | null | undefined): string | null {
 export function AssetImage({
   assetId,
   alt,
-  className
+  className,
+  categoryName
 }: {
   assetId: string | null | undefined;
   alt: string;
   /** 追加的样式类；不传时保持原有 thumb/thumb-placeholder 行为 */
   className?: string;
+  /** 可选分类名，用于无封面图时展示对应分类的几何线框占位 */
+  categoryName?: string | null;
 }) {
   const url = useAssetUrl(assetId);
   const cls = className ? `thumb ${className}` : 'thumb';
   if (!url) {
-    return (
-      <div className={className ? `thumb-placeholder ${className}` : 'thumb-placeholder'}>无图片</div>
-    );
+    return <CategoryPlaceholder categoryName={categoryName} alt={alt} className={className} />;
   }
   return <img className={cls} src={url} alt={alt} />;
 }
@@ -226,11 +233,15 @@ export function InfoDot({ text }: { text: string }) {
   useEffect(() => {
     if (!open) return;
     const onDown = (e: Event) => {
-      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
+      if (!wrapRef.current?.contains(e.target as Node)) close();
     };
     document.addEventListener('pointerdown', onDown);
     return () => document.removeEventListener('pointerdown', onDown);
   }, [open]);
+
+  useEffect(() => () => {
+    if (openBubble?.id === id) openBubble = null;
+  }, [id]);
 
   function close() {
     if (openBubble?.id === id) openBubble = null;
@@ -326,20 +337,70 @@ export function PinPad({
   hint,
   error
 }: {
-  onSubmit: (pin: string) => void;
+  onSubmit: (pin: string) => void | Promise<void>;
   onCancel?: () => void;
   hint?: string;
   error?: string | null;
 }) {
   const [value, setValue] = useState('');
-  const press = (k: string) => {
+  const [submitting, setSubmitting] = useState(false);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const press = useCallback((k: string) => {
     if (k === '清空') return setValue('');
     if (k === '删除') return setValue((v) => v.slice(0, -1));
     setValue((v) => (v.length >= 8 ? v : v + k));
-  };
+  }, []);
+
+  const submitPin = useCallback(
+    async (pin: string) => {
+      if (pin.length < 4 || submitting) return;
+      setSubmitting(true);
+      try {
+        await onSubmit(pin);
+      } finally {
+        setSubmitting(false);
+      }
+    },
+    [onSubmit, submitting]
+  );
+
+  // 支持电脑端和外接键盘直接输入数字、退格、清空与回车确认
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.isComposing || submitting) return;
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target?.isContentEditable) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      // 若页面上方覆盖了其他弹窗且当前 PinPad 不在最顶层弹窗内，则不抢占键盘输入
+      const modals = document.querySelectorAll('[aria-modal="true"]');
+      if (modals.length > 0) {
+        const topModal = modals[modals.length - 1];
+        if (!rootRef.current || !topModal.contains(rootRef.current)) return;
+      }
+      if (/^[0-9]$/.test(e.key)) {
+        e.preventDefault();
+        press(e.key);
+      } else if (e.key === 'Backspace') {
+        e.preventDefault();
+        press('删除');
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        if (value) press('清空');
+        else onCancel?.();
+      } else if (e.key === 'Enter' && value.length >= 4) {
+        // 焦点在按钮上（例如「返回」）时交给按钮原生点击，避免误提交
+        if (tag === 'BUTTON') return;
+        e.preventDefault();
+        void submitPin(value);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [press, value, submitPin, onCancel, submitting]);
   const dots = useMemo(() => '●'.repeat(value.length), [value]);
   return (
-    <div className="pinpad">
+    <div className="pinpad" ref={rootRef}>
       {hint ? <div className="pin-hint">{hint}</div> : null}
       {/* 未输入时也要占位，否则按下第一个数字整行会往下跳 */}
       <div className="pin-dots">{dots || <span className="pin-dots-empty">未输入</span>}</div>
@@ -348,7 +409,9 @@ export function PinPad({
         {KEYS.map((k) => (
           <button
             key={k}
+            type="button"
             className={FN_KEYS.has(k) ? 'pin-fn' : 'pin-digit'}
+            disabled={submitting}
             onClick={() => press(k)}
             aria-label={k === '清空' ? '清空' : k === '删除' ? '删除一位' : undefined}
           >
@@ -357,11 +420,16 @@ export function PinPad({
         ))}
       </div>
       <div className="pin-actions">
-        <button className="primary block" disabled={value.length < 4} onClick={() => onSubmit(value)}>
+        <button
+          type="button"
+          className="primary block"
+          disabled={value.length < 4 || submitting}
+          onClick={() => void submitPin(value)}
+        >
           确认
         </button>
         {onCancel ? (
-          <button className="block" onClick={onCancel}>
+          <button type="button" className="block" disabled={submitting} onClick={onCancel}>
             返回
           </button>
         ) : null}

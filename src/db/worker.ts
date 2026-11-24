@@ -10,7 +10,7 @@
 import sqlite3InitModule from '@sqlite.org/sqlite-wasm';
 import { APPLICATION_ID, APP_VERSION, REQUIRED_TABLES, SCHEMA_VERSION, checkSchemaSupport } from './schema';
 import { INVARIANT_CHECKS } from './invariants';
-import { buildInitialSchemaSteps, buildMigrationSteps, metaUpsertStep } from './bootstrap';
+import { buildInitialSchemaSteps, buildMigrationSteps } from './bootstrap';
 import type { Bind, Step, StepResult } from './executor';
 import { nowIso } from '../domain/ids';
 
@@ -36,14 +36,25 @@ interface Req {
   bytes?: Uint8Array;
 }
 
-self.onmessage = async (ev: MessageEvent<Req>) => {
+let queue: Promise<void> = Promise.resolve();
+
+self.onmessage = (ev: MessageEvent<Req>) => {
   const req = ev.data;
-  try {
-    const result = await handle(req);
-    postResult(req.id, true, result);
-  } catch (err) {
-    postResult(req.id, false, undefined, err instanceof Error ? err.message : String(err));
-  }
+  queue = queue.then(async () => {
+    try {
+      if (req.cmd === 'export') {
+        ensureReady();
+        const bytes = await exportBytes(db);
+        const copy = new Uint8Array(bytes);
+        postResult(req.id, true, { bytes: copy, slot: activeSlot }, undefined, [copy.buffer]);
+        return;
+      }
+      const result = await handle(req);
+      postResult(req.id, true, result);
+    } catch (err) {
+      postResult(req.id, false, undefined, err instanceof Error ? err.message : String(err));
+    }
+  });
 };
 
 function postResult(id: number, ok: boolean, result?: unknown, error?: string, transfer?: Transferable[]) {
@@ -64,13 +75,6 @@ async function handle(req: Req): Promise<unknown> {
     case 'read':
       ensureReady();
       return selectAll(db, req.sql ?? '', req.params);
-    case 'export': {
-      ensureReady();
-      const bytes = await exportBytes(db);
-      const copy = new Uint8Array(bytes);
-      postResult(req.id, true, { bytes: copy, slot: activeSlot }, undefined, [copy.buffer]);
-      return undefined;
-    }
     case 'importStage':
       ensureReady();
       return importStage(req.bytes ?? new Uint8Array());
@@ -101,24 +105,40 @@ async function init(slot: Slot): Promise<unknown> {
       initialCapacity: 8
     });
   }
+  if (db) {
+    try {
+      db.close();
+    } catch {
+      /* 忽略 */
+    }
+    db = null;
+  }
+  ready = false;
   activeSlot = slot;
   db = new pool.OpfsSAHPoolDb(SLOT_PATH[slot]);
   db.exec('PRAGMA foreign_keys = ON');
-  db.exec(`PRAGMA application_id = ${APPLICATION_ID}`);
   ensureSchema(db);
-  ready = true;
+  db.exec(`PRAGMA application_id = ${APPLICATION_ID}`);
   // 实际写入并重开读取，验证不是空壳
   db.exec('CREATE TABLE IF NOT EXISTS __write_probe (v INTEGER)');
   db.exec('INSERT INTO __write_probe VALUES (1)');
   db.exec('DROP TABLE __write_probe');
+  ready = true;
   return status();
 }
 
 function status() {
   const meta = readAllMeta(db);
+  let headerAppId: string | null = null;
+  try {
+    const raw = Number(selectAll(db, 'PRAGMA application_id')[0]?.application_id ?? 0);
+    if (raw) headerAppId = String(raw);
+  } catch {
+    /* 忽略 */
+  }
   return {
     slot: activeSlot,
-    applicationId: meta.application_id ?? null,
+    applicationId: headerAppId ?? meta.application_id ?? null,
     datasetId: meta.dataset_id ?? null,
     schemaVersion: Number(meta.schema_version ?? 0),
     revision: Number(meta.revision ?? 0),
@@ -170,7 +190,10 @@ function applyMigrations(d: any, from: number) {
       throw new Error('迁移后完整性检查未通过');
     }
   }
-  execSteps(d, [metaUpsertStep('last_write_app_version', APP_VERSION)]);
+  const currentMeta = readAllMeta(d);
+  if (currentMeta.last_write_app_version !== APP_VERSION) {
+    setMeta(d, 'last_write_app_version', APP_VERSION);
+  }
 }
 
 function setMeta(d: any, key: string, value: string) {
@@ -305,6 +328,7 @@ let stagedSlot: Slot | null = null;
  * 而 writeSlot 里的 importDb 是覆盖语义，目标槽位有没有旧文件都不影响结果。
  */
 async function createEmptyStage(): Promise<ImportSummary> {
+  stagedSlot = null;
   const target: Slot = activeSlot === 'a' ? 'b' : 'a';
 
   const mem = new sqlite3.oo1.DB(':memory:');
@@ -347,6 +371,7 @@ async function createEmptyStage(): Promise<ImportSummary> {
 }
 
 async function importStage(bytes: Uint8Array): Promise<ImportSummary> {
+  stagedSlot = null;
   if (!bytes || bytes.length < 100) throw new Error('文件太小，不像一个 SQLite 数据库');
   const header = String.fromCharCode(...Array.from(bytes.slice(0, 15)));
   if (!header.startsWith('SQLite format 3')) {
@@ -480,7 +505,15 @@ async function importCommit(): Promise<{ slot: Slot; status: unknown }> {
     stagedSlot = null;
     return { slot: activeSlot, status: status() };
   } catch (e) {
-    // 回滚到原槽位
+    // 回滚到原槽位前先关闭可能已打开的新槽位句柄，避免 SAHPool 句柄泄漏
+    if (db) {
+      try {
+        db.close();
+      } catch {
+        /* 忽略 */
+      }
+      db = null;
+    }
     stagedSlot = null;
     activeSlot = previous;
     db = new pool.OpfsSAHPoolDb(SLOT_PATH[previous]);

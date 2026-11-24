@@ -7,6 +7,7 @@ import { newId } from '../../domain/ids';
 import { errorMessage, useApp } from '../../store';
 import { ErrorBox, Field, Modal, Spinner, useAsync } from '../components';
 import { ORDER_STATUS_LABEL as STATUS_LABEL, orderStatusClass } from '../order-status';
+import { confirmEnterKiosk } from '../kiosk-entry';
 import type { Currency, Order } from '../../domain/types';
 import { PriceSummary } from '../Pricing';
 
@@ -47,7 +48,7 @@ export default function StaffOrdersPage() {
       </div></details>
     </div>
     <div className="section-heading order-results-heading"><span className="small muted">{orders.loading ? '正在读取…' : `共 ${orders.data?.length ?? 0} 笔${filtered ? ' · 当前筛选' : ''}`}{orders.data?.length === 200 ? '（最近 200 笔，请筛选缩小范围）' : ''}</span>{filtered ? <button className="small ghost" onClick={clearFilters}>清空筛选</button> : null}</div>
-    {orders.error ? <ErrorBox message={orders.error} /> : orders.loading ? <Spinner label="读取订单…" /> : !orders.data?.length ? <div className="empty-panel"><h2>{filtered ? '没有匹配的订单' : '本场还没有订单'}</h2><p className="muted">{filtered ? '试试其他取货号、商品名或筛选条件。' : '完成收银或提交游客订单后，会显示在这里。'}</p><button onClick={filtered ? clearFilters : () => navigate('/staff/checkout')}>{filtered ? '清空筛选' : '去收银台'}</button></div> : <div className="order-list">
+    {orders.error ? <ErrorBox message={orders.error} /> : orders.loading ? <Spinner label="读取订单…" /> : !orders.data?.length ? <div className="empty-panel"><h2>{filtered ? '没有匹配的订单' : '本场还没有订单'}</h2><p className="muted">{filtered ? '试试其他取货号、商品名或筛选条件。' : '提交游客订单后，会显示在这里。'}</p><button onClick={filtered ? clearFilters : () => confirmEnterKiosk(navigate)}>{filtered ? '清空筛选' : '进入游客菜单'}</button></div> : <div className="order-list">
       {orders.data.map(order => <article className="order-list-row" key={order.id} aria-label={`订单 #${order.human_readable_number}`}>
         <div className="order-identity"><button className="order-number" onClick={() => setDetailId(order.id)}>#{order.human_readable_number}</button><span className={`badge ${orderStatusClass(order.status)}`}>{STATUS_LABEL[order.status]}</span></div>
         <div className="order-list-content"><div className="order-items-summary">{order.item_summary || '查看商品明细'}</div><div className="small muted">{new Date(order.created_at).toLocaleString('zh-CN')} · {order.source === 'kiosk' ? '游客自助' : '摊主'} · {order.payment_method_name}</div></div>
@@ -155,6 +156,7 @@ function OrderDetailModal({
           </div>
         ) : null}
         {correction ? <div className="small">纠错：{correction.reason}</div> : null}
+        {order.note ? <div className="notice info">备注：{order.note}</div> : null}
 
         {order.status === 'completed' && !action ? (
           <div className="card" style={{ background: 'var(--surface-2)' }}>
@@ -168,14 +170,20 @@ function OrderDetailModal({
                   type="button"
                   className="small"
                   style={{ minWidth: 132, borderColor: 'var(--warn)', color: 'var(--warn)' }}
-                  onClick={() => setAction('refund')}
+                  onClick={() => {
+                    setMethodId(payment?.payment_method_id ?? '');
+                    setReason('');
+                    setReturns({});
+                    setError(null);
+                    setAction('refund');
+                  }}
                 >
                   整单退款
                 </button>
                 <div style={{ flex: 1, minWidth: 200 }}>
                   <div className="small strong">顾客确实付过钱，现在要退回去</div>
                   <div className="tiny muted">
-                    你已经在外卖（现金 / 微信 / 支付宝）把钱退给顾客了，这里只是补一条记录。
+                    你已经在外部（现金 / 微信 / 支付宝）把钱退给顾客了，这里只是补一条记录。
                     计销售、也计退款，净额为零。
                   </div>
                 </div>
@@ -185,7 +193,12 @@ function OrderDetailModal({
                   type="button"
                   className="small"
                   style={{ minWidth: 132, borderColor: 'var(--danger)', color: 'var(--danger)' }}
-                  onClick={() => setAction('correct')}
+                  onClick={() => {
+                    setReason('');
+                    setReturns({});
+                    setError(null);
+                    setAction('correct');
+                  }}
                 >
                   撤销误记
                 </button>
@@ -234,9 +247,11 @@ function OrderDetailModal({
                     min={0}
                     max={info.qty}
                     value={returns[variantId] ?? 0}
-                    onChange={(e) =>
-                      setReturns({ ...returns, [variantId]: Math.max(0, Math.min(info.qty, Number(e.target.value))) })
-                    }
+                    onChange={(e) => {
+                      const raw = Number(e.target.value);
+                      const clean = Number.isFinite(raw) ? Math.max(0, Math.min(info.qty, Math.trunc(raw))) : 0;
+                      setReturns({ ...returns, [variantId]: clean });
+                    }}
                     style={{ maxWidth: 100 }}
                   />
                   <span className="tiny muted">/ {info.qty}</span>
@@ -244,11 +259,17 @@ function OrderDetailModal({
               ))}
             </div>
             <div className="row" style={{ marginTop: 10 }}>
-              <button className="danger" disabled={busy || !reason.trim()} onClick={submit}>
+              <button className="danger" disabled={busy || !reason.trim() || (action === 'refund' && !methodId)} onClick={submit}>
                 {busy ? <span className="spinner" /> : null}
                 确认{action === 'refund' ? '记录退款' : '撤销'}
               </button>
-              <button onClick={() => setAction(null)} disabled={busy}>
+              <button
+                onClick={() => {
+                  setAction(null);
+                  setError(null);
+                }}
+                disabled={busy}
+              >
                 取消
               </button>
             </div>

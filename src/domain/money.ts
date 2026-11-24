@@ -46,9 +46,9 @@ export function minorToInput(minor: number, currency: Currency): string {
  */
 export function formatAmountOnly(minor: number, currency: Currency): string {
   const symbol = '¥';
-  if (currency === 'JPY') return `${symbol}${groupDigits(minor)}`;
   const sign = minor < 0 ? '-' : '';
   const abs = Math.abs(minor);
+  if (currency === 'JPY') return `${sign}${symbol}${groupDigits(abs)}`;
   return `${sign}${symbol}${groupDigits(Math.floor(abs / 100))}.${String(abs % 100).padStart(2, '0')}`;
 }
 

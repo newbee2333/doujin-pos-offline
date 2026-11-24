@@ -187,35 +187,42 @@ export async function createProduct(input: ProductInput): Promise<{ productId: s
   const productId = newId();
   const variantId = newId();
   const now = nowIso();
-  await ex().tx([
-    {
-      t: 'run',
-      sql: `INSERT INTO products (id, name, short_name, description, category_id, fandom, tags, type,
-            default_currency, default_price_minor, optional_cost_minor, cover_asset_id, archived, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
-      params: [
-        productId,
-        name,
-        input.short_name?.trim() || null,
-        input.description ?? null,
-        input.category_id ?? null,
-        input.fandom?.trim() || null,
-        input.tags?.trim() || null,
-        input.type,
-        input.default_currency ?? 'CNY',
-        input.default_price_minor ?? null,
-        input.optional_cost_minor ?? null,
-        input.cover_asset_id ?? null,
-        now,
-        now
-      ]
-    },
-    {
-      t: 'run',
-      sql: 'INSERT INTO product_variants (id, product_id, name, sku, archived, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, 0, 0, ?, ?)',
-      params: [variantId, productId, (input.variantName ?? '默认规格').trim() || '默认规格', input.sku?.trim() || null, now, now]
+  try {
+    await ex().tx([
+      {
+        t: 'run',
+        sql: `INSERT INTO products (id, name, short_name, description, category_id, fandom, tags, type,
+              default_currency, default_price_minor, optional_cost_minor, cover_asset_id, archived, created_at, updated_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
+        params: [
+          productId,
+          name,
+          input.short_name?.trim() || null,
+          input.description ?? null,
+          input.category_id ?? null,
+          input.fandom?.trim() || null,
+          input.tags?.trim() || null,
+          input.type,
+          input.default_currency ?? 'CNY',
+          input.default_price_minor ?? null,
+          input.optional_cost_minor ?? null,
+          input.cover_asset_id ?? null,
+          now,
+          now
+        ]
+      },
+      {
+        t: 'run',
+        sql: 'INSERT INTO product_variants (id, product_id, name, sku, archived, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, 0, 0, ?, ?)',
+        params: [variantId, productId, (input.variantName ?? '默认规格').trim() || '默认规格', input.sku?.trim() || null, now, now]
+      }
+    ]);
+  } catch (e) {
+    if (String(e).includes('UNIQUE') || String(e).includes('idx_variants_sku')) {
+      throw new DomainError('SKU 在全库必须唯一，该 SKU 已被其他规格使用');
     }
-  ]);
+    throw e;
+  }
   return { productId, variantId };
 }
 
@@ -226,10 +233,13 @@ export async function updateProduct(
   const current = await ex().readOne<Product>('SELECT * FROM products WHERE id = ?', [id]);
   if (!current) throw new DomainError('商品不存在');
   if (patch.type && patch.type !== current.type) {
-    const used = await variantHasOrders(id);
+    const used = await productHasTypeBlockers(id);
     if (used) {
-      throw new DomainError('该商品已产生订单，不能直接变更库存语义类型，请新建商品');
+      throw new DomainError(used);
     }
+  }
+  if (patch.name !== undefined && !patch.name.trim()) {
+    throw new DomainError('商品名称不能为空');
   }
   const fields: [string, unknown][] = [];
   const map: Record<string, string> = {
@@ -267,12 +277,39 @@ export async function setProductArchived(id: string, archived: boolean): Promise
   ]);
 }
 
-async function variantHasOrders(productId: string): Promise<boolean> {
-  const row = await ex().readOne<{ c: number }>(
-    'SELECT COUNT(*) AS c FROM order_items WHERE product_id = ?',
-    [productId]
-  );
-  return Number(row?.c ?? 0) > 0;
+async function productHasTypeBlockers(productId: string): Promise<string | null> {
+  const [directOrder, compOrder, invTx, asComponent, asBundle] = await Promise.all([
+    ex().readOne<{ c: number }>('SELECT COUNT(*) AS c FROM order_items WHERE product_id = ?', [productId]),
+    ex().readOne<{ c: number }>(
+      'SELECT COUNT(*) AS c FROM order_inventory_components c JOIN product_variants v ON v.id = c.component_variant_id WHERE v.product_id = ?',
+      [productId]
+    ),
+    ex().readOne<{ c: number }>(
+      'SELECT COUNT(*) AS c FROM inventory_transactions t JOIN product_variants v ON v.id = t.variant_id WHERE v.product_id = ?',
+      [productId]
+    ),
+    ex().readOne<{ c: number }>(
+      'SELECT COUNT(*) AS c FROM bundle_components bc JOIN product_variants v ON v.id = bc.component_variant_id WHERE v.product_id = ?',
+      [productId]
+    ),
+    ex().readOne<{ c: number }>(
+      'SELECT COUNT(*) AS c FROM bundle_components bc JOIN product_variants v ON v.id = bc.bundle_variant_id WHERE v.product_id = ?',
+      [productId]
+    )
+  ]);
+  if (Number(directOrder?.c ?? 0) > 0 || Number(compOrder?.c ?? 0) > 0) {
+    return '该商品已产生订单，不能直接变更库存语义类型，请新建商品';
+  }
+  if (Number(invTx?.c ?? 0) > 0) {
+    return '该商品已有库存流水，不能直接变更库存语义类型，请新建商品';
+  }
+  if (Number(asComponent?.c ?? 0) > 0) {
+    return '该商品正被组合套装作为成分引用，不能变更库存语义类型';
+  }
+  if (Number(asBundle?.c ?? 0) > 0) {
+    return '该套装已配置成分，不能直接变更库存语义类型，请新建商品';
+  }
+  return null;
 }
 
 /* ---------------------------------------------------------------- 规格 */
@@ -323,7 +360,7 @@ export async function updateVariant(
   try {
     await ex().tx(steps);
   } catch (e) {
-    if (String(e).includes('idx_variants_sku')) {
+    if (String(e).includes('UNIQUE') || String(e).includes('idx_variants_sku')) {
       throw new DomainError('SKU 在全库必须唯一，该 SKU 已被其他规格使用');
     }
     throw e;
@@ -432,13 +469,14 @@ export function listAssets(): Promise<Asset[]> {
 
 /** 清理没有业务引用的资源。仍被引用的不能删除。 */
 export async function deleteUnusedAssets(): Promise<number> {
-  const rows = await ex().read<{ id: string }>(
-    `SELECT a.id FROM assets a
-     WHERE NOT EXISTS (SELECT 1 FROM products p WHERE p.cover_asset_id = a.id)
-       AND NOT EXISTS (SELECT 1 FROM payment_methods m WHERE m.qr_asset_id = a.id)`
-  );
-  for (const r of rows) {
-    await ex().tx([{ t: 'run', sql: 'DELETE FROM assets WHERE id = ?', params: [r.id] }]);
-  }
-  return rows.length;
+  const [deleted] = await ex().tx([
+    {
+      t: 'run',
+      sql: `DELETE FROM assets
+            WHERE NOT EXISTS (SELECT 1 FROM products p WHERE p.cover_asset_id = assets.id)
+              AND NOT EXISTS (SELECT 1 FROM payment_methods m WHERE m.qr_asset_id = assets.id)
+              AND NOT EXISTS (SELECT 1 FROM orders o WHERE o.planned_qr_asset_id = assets.id)`
+    }
+  ]);
+  return Number(deleted ?? 0);
 }

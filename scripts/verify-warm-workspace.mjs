@@ -103,7 +103,7 @@ try {
   }, fixture);
   // Remount Home to reread the event status after the synthetic transactions.
   await nav('/staff/inventory'); await nav('/');
-  await page.getByRole('region', { name: '当前展会' }).getByRole('button', { name: '摊主收银', exact: true }).waitFor();
+  await page.getByRole('region', { name: '当前展会' }).getByRole('button', { name: '进入游客菜单', exact: true }).waitFor();
   assert.equal(await page.locator('.home-workspace').innerText().then(t => t.includes('¥')), false, 'home does not expose sales amounts');
   assert.equal(await page.locator('.backup-reminder').count(), 0);
   await until(async () => /6\s*项规格/.test(await page.locator('.workspace-metrics button').filter({ hasText: '菜单商品' }).innerText()), true);
@@ -159,7 +159,7 @@ try {
   assert.equal(await page.getByText('现金核对与收摊', { exact: true }).count(), 1);
   await page.screenshot({ path: 'test-results/warm-workspace/reports.png', fullPage: true });
 
-  for (const path of ['/', '/staff/orders', '/staff/reports', '/staff/checkout', '/settings', '/preview']) {
+  for (const path of ['/', '/staff/orders', '/staff/reports', '/staff/pending', '/settings', '/preview']) {
     await nav(path);
     assert.equal(await page.locator('.backup-reminder,.backup-nudge').count(), 0, `${path}: no backup reminders`);
   }

@@ -15,10 +15,12 @@ import { importFileAccept, importFileHint } from '../file-accept';
 
 export default function SetupPage({
   firstLaunch,
-  onDone
+  onDone,
+  onCancel
 }: {
   firstLaunch?: boolean;
   onDone?: () => void;
+  onCancel?: () => void;
 }) {
   const navigate = useNavigate();
   const showToast = useApp((s) => s.showToast);
@@ -61,6 +63,7 @@ export default function SetupPage({
       st.setCurrentOrder(null);
       st.setCurrentEvent(await getCurrentEventId());
       st.lockStaff();
+      st.bumpDataVersion();
       showToast('数据库已替换');
       setPreview(null);
       if (onDone) onDone();
@@ -178,6 +181,14 @@ export default function SetupPage({
                   取消
                 </button>
               </div>
+            </div>
+          ) : null}
+
+          {!firstLaunch && onCancel ? (
+            <div className="row">
+              <button disabled={busy} onClick={onCancel}>
+                返回备份与恢复
+              </button>
             </div>
           ) : null}
 

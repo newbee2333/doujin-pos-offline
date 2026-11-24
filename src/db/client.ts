@@ -27,6 +27,7 @@ class DbClient implements SqlExecutor {
   private seq = 0;
   private pending = new Map<number, Pending>();
   private initPromise: Promise<DbStatus> | null = null;
+  private initSlot: Slot | null = null;
 
   private ensureWorker(): Worker {
     if (this.worker) return this.worker;
@@ -46,6 +47,10 @@ class DbClient implements SqlExecutor {
       const err = new Error(`数据库 Worker 出错：${ev.message}`);
       for (const [, p] of this.pending) p.reject(err);
       this.pending.clear();
+      worker.terminate();
+      if (this.worker === worker) this.worker = null;
+      this.initPromise = null;
+      this.initSlot = null;
     };
     this.worker = worker;
     return worker;
@@ -61,8 +66,13 @@ class DbClient implements SqlExecutor {
   }
 
   init(slot: Slot): Promise<DbStatus> {
-    if (!this.initPromise) {
-      this.initPromise = this.call<DbStatus>('init', { slot });
+    if (!this.initPromise || this.initSlot !== slot) {
+      this.initSlot = slot;
+      this.initPromise = this.call<DbStatus>('init', { slot }).catch((err) => {
+        this.initPromise = null;
+        this.initSlot = null;
+        throw err;
+      });
     }
     return this.initPromise;
   }
@@ -103,6 +113,10 @@ class DbClient implements SqlExecutor {
 
   reset() {
     this.initPromise = null;
+    this.initSlot = null;
+    const err = new Error('数据库连接已重置');
+    for (const [, p] of this.pending) p.reject(err);
+    this.pending.clear();
     if (this.worker) {
       this.worker.terminate();
       this.worker = null;

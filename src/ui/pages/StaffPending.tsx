@@ -1,20 +1,18 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { confirmPayment, getOrderDetail, listOrders, voidOrder } from '../../services/orders';
-import { getEvent, getEventPaymentMethods } from '../../services/events';
-import { listPaymentMethods } from '../../services/events';
+import { confirmPayment, getOrderDetail, listOrderSummaries, voidOrder, type OrderSummary } from '../../services/orders';
+import { getEvent, getEventPaymentMethods, listPaymentMethods } from '../../services/events';
 import { formatMoney, minorToInput, parseAmountToMinor } from '../../domain/money';
 import { newId } from '../../domain/ids';
 import { errorMessage, useApp } from '../../store';
-import { ErrorBox, Spinner, useAsync } from '../components';
+import { ConfirmDialog, ErrorBox, Spinner, useAsync } from '../components';
+import CashTenderControl from '../CashTenderControl';
 import type { Currency, Order } from '../../domain/types';
 import PendingPriceEditor from '../PendingPriceEditor';
 import { acknowledgeOrderPrice } from '../../services/order-pricing';
 import { PriceSummary } from '../Pricing';
 
-/** 队列按「最早在前」排——先来的先处理，和现场排队顺序一致。
-    listOrders 默认是 created_at DESC（订单页要最新的在上），这里反过来。 */
-function toQueue(orders: Order[]): Order[] {
+function toQueue(orders: OrderSummary[]): OrderSummary[] {
   return [...orders].sort((a, b) => a.created_at.localeCompare(b.created_at));
 }
 
@@ -31,17 +29,33 @@ export default function StaffPendingPage() {
   const [params] = useSearchParams();
   const eventId = useApp((s) => s.currentEventId);
   const showToast = useApp((s) => s.showToast);
+  const bumpDataVersion = useApp((s) => s.bumpDataVersion);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [methodFor, setMethodFor] = useState<Record<string, string>>({});
   const [tenderedFor, setTenderedFor] = useState<Record<string, string>>({});
+  const lastAutoKeyFor = useRef<Record<string, string>>({});
   const [selectedId, setSelectedId] = useState<string | null>(() => params.get('order'));
   const [adjustOrder, setAdjustOrder] = useState<Order | null>(null);
+  const [cancelTarget, setCancelTarget] = useState<Order | null>(null);
 
   const orders = useAsync(
-    () => (eventId ? listOrders({ eventId, status: 'pending_payment' }) : Promise.resolve([])),
+    () => (eventId ? listOrderSummaries({ eventId, status: 'pending_payment', limit: 200 }) : Promise.resolve([])),
     [eventId]
   );
+
+  // 切回页面或窗口重新聚焦时自动刷新待付款队列，避免忘记点刷新漏单
+  useEffect(() => {
+    const onResume = () => {
+      if (document.visibilityState === 'visible') orders.reload();
+    };
+    window.addEventListener('focus', onResume);
+    document.addEventListener('visibilitychange', onResume);
+    return () => {
+      window.removeEventListener('focus', onResume);
+      document.removeEventListener('visibilitychange', onResume);
+    };
+  }, [orders.reload]);
   const event = useAsync(() => (eventId ? getEvent(eventId) : Promise.resolve(null)), [eventId]);
   const methods = useAsync(
     () => (eventId ? getEventPaymentMethods(eventId) : Promise.resolve([])),
@@ -52,9 +66,7 @@ export default function StaffPendingPage() {
 
   const queue = useMemo(() => toQueue(orders.data ?? []), [orders.data]);
 
-  // 选中项跟着数据走：列表刷新后如果那一单已经确认/取消，自动落到队首。
   useEffect(() => {
-    // 首次读取尚未返回时，不把主页指定的订单误当成「队列里不存在」。
     if (orders.loading || orders.error) return;
     if (!queue.length) {
       setSelectedId(null);
@@ -67,32 +79,51 @@ export default function StaffPendingPage() {
 
   const selected = queue.find((o) => o.id === selectedId) ?? null;
 
-  // 选了现金就预填实收：未填的、且对应的订单已知
   useEffect(() => {
     if (!orders.data || !allMethods.data) return;
     const cashIds = new Set(allMethods.data.filter((m) => m.type === 'cash').map((m) => m.id));
-    const newTendered: Record<string, string> = {};
+    const updates: Record<string, string> = {};
+    const activeIds = new Set<string>();
     for (const o of orders.data) {
+      activeIds.add(o.id);
       const methodId = methodFor[o.id] ?? o.planned_payment_method_id ?? '';
-      if (!cashIds.has(methodId)) continue;
-      if ((tenderedFor[o.id] ?? '') !== '') continue;
-      newTendered[o.id] = minorToInput(o.total_minor, currency);
+      const isCash = cashIds.has(methodId) && o.total_minor > 0;
+      const autoKey = isCash ? `${o.pricing_version ?? 0}:${o.total_minor}:${methodId}` : '';
+      if (!autoKey) {
+        delete lastAutoKeyFor.current[o.id];
+        continue;
+      }
+      if (lastAutoKeyFor.current[o.id] !== autoKey) {
+        lastAutoKeyFor.current[o.id] = autoKey;
+        updates[o.id] = minorToInput(o.total_minor, currency);
+      }
     }
-    if (Object.keys(newTendered).length) {
-      setTenderedFor((prev) => ({ ...prev, ...newTendered }));
+    for (const id of Object.keys(lastAutoKeyFor.current)) {
+      if (!activeIds.has(id)) delete lastAutoKeyFor.current[id];
     }
-  }, [orders.data, allMethods.data, methodFor, currency, tenderedFor]);
+    if (Object.keys(updates).length) {
+      setTenderedFor((prev) => ({ ...prev, ...updates }));
+    }
+  }, [orders.data, allMethods.data, methodFor, currency]);
 
   async function confirm(o: Order) {
     setBusyId(o.id);
     setError(null);
     try {
-      const methodId = methodFor[o.id] ?? o.planned_payment_method_id ?? '';
-      const m = allMethods.data?.find((x) => x.id === methodId);
+      const isPaid = o.total_minor > 0;
+      const methodId = isPaid ? (methodFor[o.id] ?? o.planned_payment_method_id ?? '') : '';
+      const m = isPaid ? allMethods.data?.find((x) => x.id === methodId) : null;
       const tenderedMinor =
-        m?.type === 'cash' ? parseAmountToMinor(tenderedFor[o.id] || '0', currency) : null;
-      await confirmPayment({ orderId: o.id, paymentMethodId: methodId || null, tenderedMinor, expectedPricingVersion: o.pricing_version ?? 0, operationId: newId() });
+        isPaid && m?.type === 'cash' ? parseAmountToMinor(tenderedFor[o.id] ?? '', currency) : null;
+      await confirmPayment({
+        orderId: o.id,
+        paymentMethodId: isPaid ? methodId || null : null,
+        tenderedMinor,
+        expectedPricingVersion: o.pricing_version ?? 0,
+        operationId: newId()
+      });
       showToast(`订单 #${o.human_readable_number} 已确认`);
+      bumpDataVersion();
       orders.reload();
     } catch (e) {
       setError(errorMessage(e));
@@ -101,13 +132,14 @@ export default function StaffPendingPage() {
     }
   }
 
-  async function cancel(o: Order) {
-    if (!window.confirm(`确认取消订单 #${o.human_readable_number}？请先核实确实没有收到款。`)) return;
+  async function doCancel(o: Order) {
     setBusyId(o.id);
     setError(null);
     try {
       await voidOrder(o.id, '摊主核实未收款', newId());
+      setCancelTarget(null);
       showToast('已取消');
+      bumpDataVersion();
       orders.reload();
     } catch (e) {
       setError(errorMessage(e));
@@ -132,7 +164,38 @@ export default function StaffPendingPage() {
 
   return (
     <div className="page page-cols">
-      {adjustOrder && <PendingPriceEditor order={adjustOrder} onClose={() => { setAdjustOrder(null); orders.reload(); }} onDone={() => { setTenderedFor(previous => { const next = { ...previous }; delete next[adjustOrder.id]; return next; }); setAdjustOrder(null); orders.reload(); showToast('金额已调整，请顾客重新核对'); }}/ >}
+      {adjustOrder && (
+        <PendingPriceEditor
+          order={adjustOrder}
+          onClose={() => {
+            setAdjustOrder(null);
+            orders.reload();
+          }}
+          onDone={() => {
+            setTenderedFor((previous) => {
+              const next = { ...previous };
+              delete next[adjustOrder.id];
+              return next;
+            });
+            setAdjustOrder(null);
+            orders.reload();
+            showToast('金额已调整，请顾客重新核对');
+          }}
+        />
+      )}
+
+      {cancelTarget ? (
+        <ConfirmDialog
+          title="取消这笔待付款订单？"
+          message={`确认取消订单 #${cancelTarget.human_readable_number}？请先核实确实没有收到款，取消后将释放预留库存。`}
+          confirmText="确认取消"
+          danger
+          busy={busyId === cancelTarget.id}
+          onConfirm={() => void doCancel(cancelTarget)}
+          onCancel={() => setCancelTarget(null)}
+        />
+      ) : null}
+
       <div className="page-head">
         <h1>待付款与挂起订单</h1>
         {queue.length ? <span className="badge accent">{queue.length} 笔等待处理</span> : null}
@@ -148,9 +211,6 @@ export default function StaffPendingPage() {
         <div className="notice ok">当前没有待付款订单。</div>
       ) : (
         <div className="cols-side queue-layout" style={{ marginTop: 'var(--sp-3)' }}>
-          {/* 左队列：一单一行（单号 / 时间·来源 / 金额）。
-              原来一单一张卡纵向堆，5 单就要滚两屏才看得到最后一单，
-              而营业中对单时顾客是举着 #A16 站在台前的，找单本身成了瓶颈。 */}
           <div className="side-panel">
             <div className="side-panel-head">
               <span className="strong">等待中 · {queue.length}</span>
@@ -170,8 +230,9 @@ export default function StaffPendingPage() {
                     <div>
                       <div className="queue-no">#{o.human_readable_number}</div>
                       <div className="queue-meta">
-                        {clockOf(o.created_at)} · {o.source === 'kiosk' ? '游客自助' : '摊主开单'}
+                        {clockOf(o.created_at)} · {o.payment_method_name}
                       </div>
+                      {o.item_summary ? <div className="queue-summary">{o.item_summary}</div> : null}
                     </div>
                     <span className="queue-amt">{formatMoney(o.total_minor, currency)}</span>
                   </button>
@@ -180,16 +241,13 @@ export default function StaffPendingPage() {
             </div>
           </div>
 
-          {/* 右处理面板：选中的那一单的全部信息 + 操作，一屏走完 */}
           {selected ? (
             <div className="side-panel">
               <div className="side-panel-head">
                 <span className="strong total-price">#{selected.human_readable_number}</span>
                 <span className="badge warn">待付款</span>
                 <span className="spacer" />
-                <span className="big-price total-price">
-                  {formatMoney(selected.total_minor, currency)}
-                </span>
+                <span className="big-price total-price">{formatMoney(selected.total_minor, currency)}</span>
               </div>
 
               <div className="side-panel-body">
@@ -197,8 +255,32 @@ export default function StaffPendingPage() {
               </div>
 
               <div className="side-panel-foot">
-                <button className="small" disabled={!!busyId} onClick={() => setAdjustOrder(selected)}>{selected.pricing_editing ? '继续调价 / 取消调价' : '人工优惠 / 调整应收'}</button>
-                {selected.pricing_editing ? <div className="notice warn">本单正在调价，暂时不能确认收款。可继续调价或取消本次调整。</div> : (selected.customer_ack_version ?? 0) !== (selected.pricing_version ?? 0) ? <div className="notice warn"><p>金额已调整，请顾客重新核对。</p><button disabled={!!busyId} onClick={async () => { setBusyId(selected.id); try { await acknowledgeOrderPrice(selected.id, selected.pricing_version ?? 0, 'staff'); orders.reload(); } catch (e) { setError(errorMessage(e)); } finally { setBusyId(null); } }}>顾客已核对新的应收金额</button></div> : null}
+                <button className="small" disabled={!!busyId} onClick={() => setAdjustOrder(selected)}>
+                  {selected.pricing_editing ? '继续调价 / 取消调价' : '人工优惠 / 调整应收'}
+                </button>
+                {selected.pricing_editing ? (
+                  <div className="notice warn">本单正在调价，暂时不能确认收款。可继续调价或取消本次调整。</div>
+                ) : (selected.customer_ack_version ?? 0) !== (selected.pricing_version ?? 0) ? (
+                  <div className="notice warn">
+                    <p>金额已调整，请顾客重新核对。</p>
+                    <button
+                      disabled={!!busyId}
+                      onClick={async () => {
+                        setBusyId(selected.id);
+                        try {
+                          await acknowledgeOrderPrice(selected.id, selected.pricing_version ?? 0, 'staff');
+                          orders.reload();
+                        } catch (e) {
+                          setError(errorMessage(e));
+                        } finally {
+                          setBusyId(null);
+                        }
+                      }}
+                    >
+                      顾客已核对新的应收金额
+                    </button>
+                  </div>
+                ) : null}
                 {selected.total_minor > 0 ? (
                   <>
                     <div className="field-label">实际收款方式（可与顾客选择不同）</div>
@@ -215,30 +297,13 @@ export default function StaffPendingPage() {
                       ))}
                     </div>
                     {selectedMethod?.type === 'cash' ? (
-                      <>
-                        <div className="field-label">
-                          <span>实收金额（{currency === 'CNY' ? '元' : '日元'}）</span>
-                          <button
-                            type="button"
-                            className="link-btn"
-                            onClick={() =>
-                              setTenderedFor({
-                                ...tenderedFor,
-                                [selected.id]: minorToInput(selected.total_minor, currency)
-                              })
-                            }
-                          >
-                            按应付金额
-                          </button>
-                        </div>
-                        <input
-                          type="text"
-                          placeholder={currency === 'CNY' ? '0.00' : '0'}
-                          value={tenderedFor[selected.id] ?? ''}
-                          onChange={(e) => setTenderedFor({ ...tenderedFor, [selected.id]: e.target.value })}
-                          aria-label="实收金额"
-                        />
-                      </>
+                      <CashTenderControl
+                        totalMinor={selected.total_minor}
+                        currency={currency}
+                        value={tenderedFor[selected.id] ?? ''}
+                        disabled={busyId === selected.id}
+                        onChange={(next) => setTenderedFor({ ...tenderedFor, [selected.id]: next })}
+                      />
                     ) : null}
                   </>
                 ) : null}
@@ -249,7 +314,12 @@ export default function StaffPendingPage() {
                   <button
                     className="primary"
                     style={{ flex: 1, minHeight: 52 }}
-                    disabled={busyId === selected.id || !!selected.pricing_editing || (selected.customer_ack_version ?? 0) !== (selected.pricing_version ?? 0) || (selected.total_minor > 0 && !selectedMethodId)}
+                    disabled={
+                      busyId === selected.id ||
+                      !!selected.pricing_editing ||
+                      (selected.customer_ack_version ?? 0) !== (selected.pricing_version ?? 0) ||
+                      (selected.total_minor > 0 && !selectedMethodId)
+                    }
                     onClick={() => confirm(selected)}
                   >
                     {busyId === selected.id ? <span className="spinner" /> : null}
@@ -259,7 +329,7 @@ export default function StaffPendingPage() {
                     className="danger"
                     style={{ minHeight: 52 }}
                     disabled={busyId === selected.id}
-                    onClick={() => cancel(selected)}
+                    onClick={() => setCancelTarget(selected)}
                   >
                     取消订单
                   </button>
@@ -277,7 +347,6 @@ export default function StaffPendingPage() {
   );
 }
 
-/** 选中订单的明细：来源、时间、预留件数、等待时长、逐行商品。 */
 function PendingDetail({ order, currency }: { order: Order; currency: Currency }) {
   const d = useAsync(() => getOrderDetail(order.id), [order.id, order.pricing_version]);
   const items = d.data?.items ?? [];
@@ -307,7 +376,7 @@ function PendingDetail({ order, currency }: { order: Order; currency: Currency }
         </div>
       ))}
 
-      <PriceSummary quote={order.pricing_json ? JSON.parse(order.pricing_json) : null} currency={currency}/>
+      <PriceSummary quote={order.pricing_json ? JSON.parse(order.pricing_json) : null} currency={currency} />
       {order.note ? <div className="notice info">备注：{order.note}</div> : null}
     </>
   );

@@ -37,6 +37,15 @@ export async function setLandscapeCartEnabled(enabled: boolean): Promise<void> {
   await setSetting('ui.landscape_side_cart', enabled ? '1' : '0');
 }
 
+/** 可选全局摊位/社团招牌名；留空时游客菜单回退展示当前展会名。 */
+export async function getBoothName(): Promise<string> {
+  return (await getSetting('ui.booth_name')) ?? '';
+}
+
+export async function setBoothName(name: string): Promise<void> {
+  await setSetting('ui.booth_name', name.trim());
+}
+
 const BACKUP_REMIND_HOURS = 24;
 
 export async function shouldRemindBackup(): Promise<boolean> {
@@ -91,7 +100,7 @@ export async function verifyPin(pin: string): Promise<boolean> {
 /* -------------------------------------------------------------- 当前展会 */
 
 export async function getCurrentEventId(): Promise<string | null> {
-  return getSetting('app.current_event_id');
+  return (await getSetting('app.current_event_id')) || null;
 }
 
 export async function setCurrentEventId(id: string | null): Promise<void> {
@@ -184,10 +193,11 @@ export interface ReplacePreview {
 
 export async function stageImport(bytes: Uint8Array): Promise<ReplacePreview> {
   const current = await db.status();
-  const currentOrders = await db.read<{ c: number }>('SELECT COUNT(*) AS c FROM orders');
-  const currentCompleted = await db.read<{ c: number }>(
-    "SELECT COUNT(*) AS c FROM orders WHERE status = 'completed'"
-  );
+  const [currentEvents, currentOrders, currentCompleted] = await Promise.all([
+    db.read<{ c: number }>('SELECT COUNT(*) AS c FROM events'),
+    db.read<{ c: number }>('SELECT COUNT(*) AS c FROM orders'),
+    db.read<{ c: number }>("SELECT COUNT(*) AS c FROM orders WHERE status = 'completed'")
+  ]);
   const candidate = await db.importStage(bytes);
   const warnings: string[] = [];
   if (candidate.datasetId !== current.datasetId) {
@@ -203,7 +213,7 @@ export async function stageImport(bytes: Uint8Array): Promise<ReplacePreview> {
       revision: current.revision,
       orderCount: Number(currentOrders[0]?.c ?? 0),
       completedOrderCount: Number(currentCompleted[0]?.c ?? 0),
-      eventCount: 0
+      eventCount: Number(currentEvents[0]?.c ?? 0)
     },
     candidate,
     warnings

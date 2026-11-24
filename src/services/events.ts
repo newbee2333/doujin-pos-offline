@@ -3,7 +3,8 @@
 import type { Step } from '../db/executor';
 import type { Currency, Event, EventVariantConfig, PaymentMethod } from '../domain/types';
 import { newId, nowIso } from '../domain/ids';
-import { auditStep, ex } from './context';
+import { validateEventDates } from '../domain/event-dates';
+import { auditStep, ex, getSetting } from './context';
 import { DomainError } from './catalog';
 
 /** Reorder the visible subset while preserving the slots of hidden products. */
@@ -49,6 +50,8 @@ export interface EventInput {
 export async function createEvent(input: EventInput): Promise<string> {
   const name = input.name.trim();
   if (!name) throw new DomainError('展会名称不能为空');
+  const dateErr = validateEventDates(input.start_date ?? null, input.end_date ?? null);
+  if (dateErr) throw new DomainError(dateErr);
   const id = newId();
   const now = nowIso();
   await ex().tx([
@@ -79,6 +82,15 @@ export async function updateEvent(
 ): Promise<void> {
   const current = await getEvent(id);
   if (!current) throw new DomainError('展会不存在');
+  if (patch.name !== undefined && !patch.name.trim()) {
+    throw new DomainError('展会名称不能为空');
+  }
+  if (patch.start_date !== undefined || patch.end_date !== undefined) {
+    const nextStart = patch.start_date !== undefined ? patch.start_date : current.start_date;
+    const nextEnd = patch.end_date !== undefined ? patch.end_date : current.end_date;
+    const dateErr = validateEventDates(nextStart ?? null, nextEnd ?? null);
+    if (dateErr) throw new DomainError(dateErr);
+  }
   if (patch.currency && patch.currency !== current.currency) {
     const row = await ex().readOne<{ c: number }>('SELECT COUNT(*) AS c FROM orders WHERE event_id = ?', [id]);
     if (Number(row?.c ?? 0) > 0) {
@@ -88,7 +100,7 @@ export async function updateEvent(
   const fields: [string, unknown][] = [];
   for (const key of ['name', 'start_date', 'end_date', 'timezone', 'booth_number', 'currency', 'note'] as const) {
     const v = patch[key];
-    if (v !== undefined) fields.push([key, v]);
+    if (v !== undefined) fields.push([key, key === 'name' && typeof v === 'string' ? v.trim() : v]);
   }
   if (!fields.length) return;
   await ex().tx([
@@ -105,11 +117,35 @@ export async function activateEvent(id: string): Promise<void> {
   const ev = await getEvent(id);
   if (!ev) throw new DomainError('展会不存在');
   if (ev.status === 'active') return;
+  if (ev.status === 'closed') throw new DomainError('已收摊的展会请使用「重新打开」功能');
+  const active = await getActiveEvent();
+  if (active && active.id !== id) {
+    const activePending = await ex().readOne<{ c: number }>(
+      "SELECT COUNT(*) AS c FROM orders WHERE event_id = ? AND status = 'pending_payment'",
+      [active.id]
+    );
+    if (Number(activePending?.c ?? 0) > 0) {
+      throw new DomainError(`当前进行中的展会「${active.name}」还有 ${activePending?.c} 笔待付款订单未处理，请先处理后再切换开场`);
+    }
+  }
   const issues = await checkEventReady(id);
   if (issues.length) throw new DomainError(`无法开场：${issues.join('；')}`);
+  const now = nowIso();
   await ex().tx([
-    { t: 'run', sql: "UPDATE events SET status = 'closed', updated_at = ? WHERE status = 'active' AND id <> ?", params: [nowIso(), id] },
-    { t: 'run', sql: "UPDATE events SET status = 'active', updated_at = ? WHERE id = ?", params: [nowIso(), id], expectChanges: 1 },
+    {
+      t: 'assert',
+      sql: "SELECT COUNT(*) FROM orders o JOIN events e ON e.id = o.event_id WHERE e.status = 'active' AND e.id <> ? AND o.status = 'pending_payment'",
+      params: [id],
+      equals: 0,
+      message: '当前进行中的展会还有待付款订单未处理，不能直接切换开场'
+    },
+    ...(active && active.id !== id
+      ? [
+          { t: 'run' as const, sql: "UPDATE events SET status = 'closed', updated_at = ? WHERE status = 'active' AND id <> ?", params: [now, id] },
+          auditStep('event.close', 'event', active.id, { reason: 'switch_to_new_event', nextEventId: id })
+        ]
+      : [{ t: 'run' as const, sql: "UPDATE events SET status = 'closed', updated_at = ? WHERE status = 'active' AND id <> ?", params: [now, id] }]),
+    { t: 'run', sql: "UPDATE events SET status = 'active', updated_at = ? WHERE id = ? AND status = 'draft'", params: [now, id], expectChanges: 1 },
     auditStep('event.open', 'event', id, { name: ev.name })
   ]);
 }
@@ -128,7 +164,8 @@ export async function checkEventReady(id: string): Promise<string[]> {
   const missingPrice = await ex().read<{ variant_name: string }>(
     `SELECT v.name AS variant_name FROM event_variant_configs c
      JOIN product_variants v ON v.id = c.variant_id
-     WHERE c.event_id = ? AND c.enabled = 1 AND c.event_price_minor IS NULL`,
+     JOIN products p ON p.id = v.product_id
+     WHERE c.event_id = ? AND c.enabled = 1 AND p.type <> 'gift' AND c.event_price_minor IS NULL`,
     [id]
   );
   if (missingPrice.length) {
@@ -230,6 +267,13 @@ export async function closeEvent(id: string): Promise<void> {
     throw new DomainError(`还有 ${pending?.c} 笔待付款订单未处理，不能收摊`);
   }
   await ex().tx([
+    {
+      t: 'assert',
+      sql: "SELECT COUNT(*) FROM orders WHERE event_id = ? AND status = 'pending_payment'",
+      params: [id],
+      equals: 0,
+      message: '还有待付款订单未处理，不能收摊'
+    },
     { t: 'run', sql: "UPDATE events SET status = 'closed', updated_at = ? WHERE id = ?", params: [nowIso(), id], expectChanges: 1 },
     auditStep('event.close', 'event', id, {})
   ]);
@@ -238,12 +282,22 @@ export async function closeEvent(id: string): Promise<void> {
 /** 重新打开已关闭展会：需要原因与审计记录，且不能与另一个 active 展会冲突。 */
 export async function reopenEvent(id: string, reason: string): Promise<void> {
   if (!reason.trim()) throw new DomainError('请填写重新打开的原因');
+  const ev = await getEvent(id);
+  if (!ev) throw new DomainError('展会不存在');
+  if (ev.status !== 'closed') throw new DomainError('只有已收摊的展会可以重新打开');
   const active = await getActiveEvent();
   if (active && active.id !== id) {
     throw new DomainError(`已有进行中的展会「${active.name}」，不能同时开启两场`);
   }
   await ex().tx([
-    { t: 'run', sql: "UPDATE events SET status = 'active', updated_at = ? WHERE id = ?", params: [nowIso(), id], expectChanges: 1 },
+    {
+      t: 'assert',
+      sql: "SELECT COUNT(*) FROM events WHERE status = 'active' AND id <> ?",
+      params: [id],
+      equals: 0,
+      message: '已有进行中的展会，不能同时开启两场'
+    },
+    { t: 'run', sql: "UPDATE events SET status = 'active', updated_at = ? WHERE id = ? AND status = 'closed'", params: [nowIso(), id], expectChanges: 1 },
     auditStep('event.reopen', 'event', id, { reason })
   ]);
 }
@@ -348,14 +402,35 @@ export async function updateConfig(
     if (v !== undefined) fields.push([key, v]);
   }
   if (!fields.length) return;
-  await ex().tx([
+  const steps: Step[] = [
     {
       t: 'run',
       sql: `UPDATE event_variant_configs SET ${fields.map(([c]) => `${c} = ?`).join(', ')}
             WHERE event_id = ? AND variant_id = ?`,
       params: [...fields.map(([, v]) => v as string | number | null), eventId, variantId]
     }
-  ]);
+  ];
+  // 清理或同步已失效的单品活动价：防止清空定价或降价低于活动特价后锁死整场「保存本场优惠」
+  if (patch.event_price_minor !== undefined) {
+    const promoKey = `promotions.${eventId}`;
+    const raw = await getSetting(promoKey);
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw) as { prices?: Record<string, { kind: 'price' | 'rate'; value: number }> };
+        const adj = parsed.prices?.[variantId];
+        if (adj && (patch.event_price_minor === null || (adj.kind === 'price' && adj.value > patch.event_price_minor))) {
+          steps.push({
+            t: 'run',
+            sql: "UPDATE settings SET value = json_set(json_remove(value, ?), '$.version', ?) WHERE key = ?",
+            params: [`$.prices.${JSON.stringify(variantId)}`, newId(), promoKey]
+          });
+        }
+      } catch {
+        /* 忽略格式异常 */
+      }
+    }
+  }
+  await ex().tx(steps);
 }
 
 export async function setVariantsEnabled(eventId: string, variantIds: string[], enabled: boolean): Promise<void> {
@@ -480,6 +555,12 @@ export async function updatePaymentMethod(
   for (const [key, col] of Object.entries(map)) {
     const v = (patch as Record<string, unknown>)[key];
     if (v === undefined) continue;
+    if (key === 'name') {
+      const trimmed = String(v).trim();
+      if (!trimmed) throw new DomainError('支付方式名称不能为空');
+      fields.push([col, trimmed]);
+      continue;
+    }
     fields.push([col, typeof v === 'boolean' ? (v ? 1 : 0) : v]);
   }
   if (!fields.length) return;
