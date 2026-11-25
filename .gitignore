@@ -37,7 +37,14 @@ Thumbs.db
 npm-debug.log*
 yarn-error.log*
 
-# 本地环境变量
+# 本地环境变量与部署配置
 .env
 .env.local
 .env.*.local
+wrangler.toml
+
+# 导出的本地营业数据库与个人交接笔记（绝不入库）
+*.sqlite
+*.sqlite3
+*.db
+AGENTS.md
